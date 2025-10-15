@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentación simJtac</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 id="homeButton" style="cursor:pointer;">Documentación simJtac</h1>
+            <p>Entrena como combates</p>
+        </header>
+        <!-- Contenedores para las vistas -->
+        <section class="main-buttons" id="mainButtons"></section>
+        <section id="submenuContainer"></section>
+        <section class="content-area" id="contentArea">
+            <button class="back-button" id="backButton">← Volver</button>
+            <h2 class="content-header" id="contentHeader"></h2>
+            <div class="content-body" id="contentBody"></div>
+        </section>
+    </div>
+    <script src="sql-wasm.js"></script>
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
