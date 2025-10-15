@@ -32,10 +32,10 @@ async function initDatabase() {
     try {
         await initDB();
         databaseReady = true;
-        console.info('[SQLite] Base de datos en memoria inicializada');
+        console.info('[DataStore] Almacen de incidencias inicializado');
     } catch (error) {
         databaseReady = false;
-        console.error('[SQLite] Error al inicializar la base de datos', error);
+        console.error('[DataStore] Error al inicializar el almacen local', error);
     }
 }
 
@@ -75,6 +75,6 @@ function initModules() {
 
 function notifyDatabaseStatus() {
     if (!databaseReady) {
-        console.warn('[SQLite] La base de datos no se ha podido inicializar. Revisa la carga de sql-wasm.js o recarga la pagina.');
+        console.warn('[DataStore] No se pudo preparar el almacen local. Los datos solo estaran disponibles durante la sesion.');
     }
 }

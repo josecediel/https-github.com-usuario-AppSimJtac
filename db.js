@@ -1,680 +1,816 @@
-// db.js (ES module) - SQLite helpers via sql.js
-let SQL;
-let db;
-let dbName = 'simjtac.db';
+const STORE_KEY = 'simjtac_incidents_store_v2';
+const SCHEMA_VERSION = 2;
+
+let store = createEmptyStore();
+let persistenceAvailable = true;
 
 export async function initDB() {
-  if (!window.initSqlJs) {
-    throw new Error('sql-wasm.js no esta cargado');
-  }
-  if (!SQL) {
-    SQL = await window.initSqlJs({ locateFile: file => file });
-  }
-  if (!db) {
-    db = new SQL.Database();
+    loadStore();
     ensureSchema();
-  }
-  return true;
-}
-
-export function newDB(name = 'simjtac.db') {
-  db = new SQL.Database();
-  dbName = name;
-  ensureSchema();
-  return db;
-}
-
-export async function openDBFromFile(file) {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  db = new SQL.Database(bytes);
-  dbName = file.name || 'simjtac.db';
-  ensureSchema();
-  return db;
-}
-
-export function exportDB(name = dbName) {
-  const binary = db.export();
-  const blob = new Blob([binary], { type: 'application/octet-stream' });
-  const anchor = document.createElement('a');
-  anchor.href = URL.createObjectURL(blob);
-  anchor.download = name;
-  anchor.click();
-}
-
-export function exec(sql) {
-  try {
-    return db.exec(sql);
-  } catch (error) {
-    throw new Error(error.message);
-  }
-}
-
-export function run(sql, params = {}) {
-  try {
-    const statement = db.prepare(sql);
-    statement.run(params);
-    statement.free();
-  } catch (error) {
-    throw new Error(error.message);
-  }
-}
-
-export function select(sql, params = {}) {
-  let statement;
-  try {
-    statement = db.prepare(sql);
-    if (params && Object.keys(params).length) {
-      statement.bind(params);
-    }
-    const rows = [];
-    while (statement.step()) {
-      rows.push(statement.getAsObject());
-    }
-    return rows;
-  } catch (error) {
-    throw new Error(error.message);
-  } finally {
-    statement?.free();
-  }
-}
-
-const SCHEMA_VERSION = 1;
-
-export function ensureSchema() {
-  db.run(`
-    BEGIN;
-    CREATE TABLE IF NOT EXISTS meta (
-      clave TEXT PRIMARY KEY,
-      valor TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS domos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nombre TEXT NOT NULL UNIQUE
-    );
-
-    CREATE TABLE IF NOT EXISTS puestos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      domo_id INTEGER NOT NULL,
-      nombre TEXT NOT NULL,
-      UNIQUE(domo_id, nombre),
-      FOREIGN KEY (domo_id) REFERENCES domos(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS elementos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      puesto_id INTEGER NOT NULL,
-      nombre TEXT NOT NULL,
-      UNIQUE(puesto_id, nombre),
-      FOREIGN KEY (puesto_id) REFERENCES puestos(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS componentes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      elemento_id INTEGER NOT NULL,
-      nombre TEXT NOT NULL,
-      parent_id INTEGER,
-      UNIQUE(elemento_id, nombre, IFNULL(parent_id, -1)),
-      FOREIGN KEY (elemento_id) REFERENCES elementos(id) ON DELETE CASCADE,
-      FOREIGN KEY (parent_id) REFERENCES componentes(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS incidentes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      fecha TEXT NOT NULL,
-      domo_id INTEGER NOT NULL,
-      puesto_id INTEGER NOT NULL,
-      elemento_id INTEGER NOT NULL,
-      componente_id INTEGER,
-      status TEXT NOT NULL DEFAULT 'open',
-      descripcion TEXT NOT NULL,
-      resolucion TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      closed_at TEXT,
-      FOREIGN KEY (domo_id) REFERENCES domos(id),
-      FOREIGN KEY (puesto_id) REFERENCES puestos(id),
-      FOREIGN KEY (elemento_id) REFERENCES elementos(id),
-      FOREIGN KEY (componente_id) REFERENCES componentes(id)
-    );
-
-    INSERT OR REPLACE INTO meta(clave, valor) VALUES ('schema_version', '${SCHEMA_VERSION}');
-    COMMIT;
-  `);
-
-  seedBaseStructure();
+    return true;
 }
 
 export function getSchemaVersion() {
-  try {
-    const row = select(`SELECT valor FROM meta WHERE clave = 'schema_version' LIMIT 1;`);
-    return row[0]?.valor ?? null;
-  } catch {
-    return null;
-  }
+    return store.meta.schemaVersion ?? null;
 }
-
-function getLastInsertId() {
-  const row = select('SELECT last_insert_rowid() as id;');
-  return Number(row[0]?.id ?? 0);
-}
-
-function seedBaseStructure() {
-  const existing = select('SELECT COUNT(*) as total FROM domos;')[0];
-  if (Number(existing?.total ?? 0) > 0) {
-    return;
-  }
-
-  const baseStructure = createBaseStructure();
-  db.run('BEGIN;');
-  try {
-    baseStructure.forEach(domo => {
-      const domoId = getOrCreateDomo(domo.nombre);
-      domo.puestos.forEach(puesto => {
-        const puestoId = getOrCreatePuesto(domoId, puesto.nombre);
-        puesto.elementos.forEach(elemento => {
-          const elementoId = getOrCreateElemento(puestoId, elemento.nombre);
-          elemento.componentes.forEach(componente => {
-            if (typeof componente === 'string') {
-              getOrCreateComponente(elementoId, componente);
-            } else if (componente && typeof componente === 'object') {
-              const parentId = getOrCreateComponente(elementoId, componente.nombre);
-              (componente.subcomponentes || []).forEach(sub => {
-                getOrCreateComponente(elementoId, sub, parentId);
-              });
-            }
-          });
-        });
-      });
-    });
-    db.run('COMMIT;');
-  } catch (error) {
-    db.run('ROLLBACK;');
-    console.error('[SQLite] Error al sembrar estructura base', error);
-  }
-}
-
-function createBaseStructure() {
-  const puestoInstructor = {
-    nombre: 'Instructor',
-    elementos: [
-      {
-        nombre: 'Servidor VBS',
-        componentes: [
-          { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
-          'Monitor VBS',
-          'Extensor USB',
-          'Teclado',
-          'Raton',
-          'Monitor Visual'
-        ]
-      },
-      {
-        nombre: 'Servidor IOS',
-        componentes: [
-          { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
-          'Monitor IOS',
-          'Extensor USB',
-          'Joystick'
-        ]
-      }
-    ]
-  };
-
-  const puestoJTAC = {
-    nombre: 'JTAC',
-    elementos: [
-      {
-        nombre: 'Servidor Host',
-        componentes: ['Tablet Rover']
-      },
-      {
-        nombre: 'Servidor Radio',
-        componentes: ['Mini PC', 'Radio Maquetada', 'Cascos']
-      },
-      {
-        nombre: 'Servidor Proyeccion',
-        componentes: [
-          { nombre: 'Cable', subcomponentes: ['USB'] },
-          'Extensor USB',
-          'DAGR',
-          'Puntero',
-          'Mando BT'
-        ]
-      },
-      {
-        nombre: 'Servidor LTD',
-        componentes: [
-          { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
-          'Extensor USB',
-          'LTD'
-        ]
-      },
-      {
-        nombre: 'Servidor Moskito',
-        componentes: [
-          { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
-          'Extensor USB',
-          'Moskito'
-        ]
-      },
-      {
-        nombre: 'Servidor Jim Compact',
-        componentes: [
-          { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
-          'Extensor USB',
-          'Jim Compact'
-        ]
-      }
-    ]
-  };
-
-  const puestoPiloto = {
-    nombre: 'Piloto',
-    elementos: [
-      {
-        nombre: 'Servidor Radio',
-        componentes: ['Mini PC', 'Radio Maquetada', 'Cascos']
-      },
-      {
-        nombre: 'Servidor VBS',
-        componentes: [
-          'Palanca de Gases',
-          'Pedales',
-          'Joystick HOTAS',
-          { nombre: 'Cable', subcomponentes: ['USB'] },
-          'Extensor USB',
-          'Monitor VBS + Instrumentacion'
-        ]
-      },
-      {
-        nombre: 'Servidor IOS',
-        componentes: [
-          { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
-          'Extensor USB',
-          'Monitor IOS',
-          'Teclado + Trackpad'
-        ]
-      },
-      {
-        nombre: 'Servidor Rover',
-        componentes: [
-          'Monitor VBS',
-          { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
-          'Extensor USB'
-        ]
-      }
-    ]
-  };
-
-  const domos = ['Domo 1', 'Domo 2'].map(nombre => ({
-    nombre,
-    puestos: [puestoInstructor, puestoJTAC, puestoPiloto]
-  }));
-
-  return domos;
-}
-
-function getOrCreateDomo(nombre) {
-  const existing = select('SELECT id FROM domos WHERE nombre = :nombre LIMIT 1;', { ':nombre': nombre });
-  if (existing.length) {
-    return Number(existing[0].id);
-  }
-  run('INSERT INTO domos(nombre) VALUES (:nombre);', { ':nombre': nombre });
-  return getLastInsertId();
-}
-
-function getOrCreatePuesto(domoId, nombre) {
-  const existing = select(
-    'SELECT id FROM puestos WHERE domo_id = :domo_id AND nombre = :nombre LIMIT 1;',
-    { ':domo_id': domoId, ':nombre': nombre }
-  );
-  if (existing.length) {
-    return Number(existing[0].id);
-  }
-  run(
-    'INSERT INTO puestos(domo_id, nombre) VALUES (:domo_id, :nombre);',
-    { ':domo_id': domoId, ':nombre': nombre }
-  );
-  return getLastInsertId();
-}
-
-function getOrCreateElemento(puestoId, nombre) {
-  const existing = select(
-    'SELECT id FROM elementos WHERE puesto_id = :puesto_id AND nombre = :nombre LIMIT 1;',
-    { ':puesto_id': puestoId, ':nombre': nombre }
-  );
-  if (existing.length) {
-    return Number(existing[0].id);
-  }
-  run(
-    'INSERT INTO elementos(puesto_id, nombre) VALUES (:puesto_id, :nombre);',
-    { ':puesto_id': puestoId, ':nombre': nombre }
-  );
-  return getLastInsertId();
-}
-
-function getOrCreateComponente(elementoId, nombre, parentId = null) {
-  const existing = select(
-    `SELECT id FROM componentes 
-     WHERE elemento_id = :elemento_id 
-       AND nombre = :nombre
-       AND IFNULL(parent_id, -1) = IFNULL(:parent_id, -1)
-     LIMIT 1;`,
-    {
-      ':elemento_id': elementoId,
-      ':nombre': nombre,
-      ':parent_id': parentId
-    }
-  );
-  if (existing.length) {
-    return Number(existing[0].id);
-  }
-  run(
-    'INSERT INTO componentes(elemento_id, nombre, parent_id) VALUES (:elemento_id, :nombre, :parent_id);',
-    {
-      ':elemento_id': elementoId,
-      ':nombre': nombre,
-      ':parent_id': parentId
-    }
-  );
-  return getLastInsertId();
-}
-
-// Hierarchy helpers ---------------------------------------------------------
 
 export function getDomos() {
-  return select('SELECT id, nombre FROM domos ORDER BY nombre;');
+    return store.domos
+        .slice()
+        .sort(sortByName)
+        .map(d => ({ id: d.id, nombre: d.nombre }));
 }
 
 export function addDomo(nombre) {
-  const clean = nombre.trim();
-  if (!clean) throw new Error('Nombre de domo vacio');
-  const id = getOrCreateDomo(clean);
-  return { id, nombre: clean };
+    const clean = cleanName(nombre);
+    if (!clean) {
+        throw new Error('Nombre de domo vacio');
+    }
+    const id = getOrCreateDomo(clean);
+    saveStore();
+    return findDomo(id);
 }
 
 export function getPuestosByDomo(domoId) {
-  return select(
-    'SELECT id, nombre FROM puestos WHERE domo_id = :domo_id ORDER BY nombre;',
-    { ':domo_id': domoId }
-  );
+    const id = Number(domoId);
+    return store.puestos
+        .filter(p => p.domoId === id)
+        .slice()
+        .sort(sortByName)
+        .map(p => ({ id: p.id, nombre: p.nombre }));
 }
 
 export function addPuesto(domoId, nombre) {
-  const clean = nombre.trim();
-  if (!clean) throw new Error('Nombre de puesto vacio');
-  const id = getOrCreatePuesto(domoId, clean);
-  return { id, nombre: clean, domo_id: domoId };
+    const domo = getDomoRecord(domoId);
+    if (!domo) {
+        throw new Error('Domo no encontrado');
+    }
+    const id = getOrCreatePuesto(domo.id, nombre);
+    saveStore();
+    return findPuesto(id);
 }
 
 export function getElementosByPuesto(puestoId) {
-  return select(
-    'SELECT id, nombre FROM elementos WHERE puesto_id = :puesto_id ORDER BY nombre;',
-    { ':puesto_id': puestoId }
-  );
+    const id = Number(puestoId);
+    return store.elementos
+        .filter(e => e.puestoId === id)
+        .slice()
+        .sort(sortByName)
+        .map(e => ({ id: e.id, nombre: e.nombre }));
 }
 
 export function addElemento(puestoId, nombre) {
-  const clean = nombre.trim();
-  if (!clean) throw new Error('Nombre de elemento vacio');
-  const id = getOrCreateElemento(puestoId, clean);
-  return { id, nombre: clean, puesto_id: puestoId };
+    const puesto = getPuestoRecord(puestoId);
+    if (!puesto) {
+        throw new Error('Puesto no encontrado');
+    }
+    const id = getOrCreateElemento(puesto.id, nombre);
+    saveStore();
+    return findElemento(id);
 }
 
 export function getComponentesByElemento(elementoId) {
-  const padres = select(
-    'SELECT id, nombre FROM componentes WHERE elemento_id = :elemento_id AND parent_id IS NULL ORDER BY nombre;',
-    { ':elemento_id': elementoId }
-  );
-  return padres.map(parent => {
-    const hijos = select(
-      'SELECT id, nombre FROM componentes WHERE parent_id = :parent_id ORDER BY nombre;',
-      { ':parent_id': parent.id }
-    );
-    return {
-      id: Number(parent.id),
-      nombre: parent.nombre,
-      hijos: hijos.map(h => ({ id: Number(h.id), nombre: h.nombre }))
-    };
-  });
+    const id = Number(elementoId);
+    return store.componentes
+        .filter(c => c.elementoId === id && c.parentId == null)
+        .slice()
+        .sort(sortByName)
+        .map(parent => ({
+            id: parent.id,
+            nombre: parent.nombre,
+            hijos: store.componentes
+                .filter(child => child.parentId === parent.id)
+                .slice()
+                .sort(sortByName)
+                .map(child => ({ id: child.id, nombre: child.nombre }))
+        }));
 }
 
 export function addComponente(elementoId, nombre, parentId = null) {
-  const clean = nombre.trim();
-  if (!clean) throw new Error('Nombre de componente vacio');
-  const id = getOrCreateComponente(elementoId, clean, parentId);
-  return { id, nombre: clean, elemento_id: elementoId, parent_id: parentId };
+    const elemento = getElementoRecord(elementoId);
+    if (!elemento) {
+        throw new Error('Elemento no encontrado');
+    }
+
+    const normalizedParent = parentId != null ? Number(parentId) : null;
+    if (normalizedParent) {
+        const parent = getComponentRecord(normalizedParent);
+        if (!parent || parent.elementoId !== elemento.id) {
+            throw new Error('Componente padre no valido');
+        }
+    }
+
+    const id = getOrCreateComponente(elemento.id, nombre, normalizedParent);
+    saveStore();
+    const record = getComponentRecord(id);
+    return {
+        id: record.id,
+        nombre: record.nombre,
+        elemento_id: record.elementoId,
+        parent_id: record.parentId
+    };
 }
 
 export function getComponenteById(id) {
-  const rows = select(
-    'SELECT id, nombre, parent_id, elemento_id FROM componentes WHERE id = :id LIMIT 1;',
-    { ':id': id }
-  );
-  if (!rows.length) return null;
-  const comp = rows[0];
-  if (comp.parent_id) {
-    const parent = select(
-      'SELECT id, nombre FROM componentes WHERE id = :id LIMIT 1;',
-      { ':id': comp.parent_id }
-    )[0];
+    const record = getComponentRecord(id);
+    if (!record) {
+        return null;
+    }
+    const parent = record.parentId ? getComponentRecord(record.parentId) : null;
     return {
-      id: Number(comp.id),
-      nombre: comp.nombre,
-      parent: parent ? { id: Number(parent.id), nombre: parent.nombre } : null,
-      elemento_id: Number(comp.elemento_id)
+        id: record.id,
+        nombre: record.nombre,
+        parent: parent ? { id: parent.id, nombre: parent.nombre } : null,
+        elemento_id: record.elementoId
     };
-  }
-  return {
-    id: Number(comp.id),
-    nombre: comp.nombre,
-    parent: null,
-    elemento_id: Number(comp.elemento_id)
-  };
 }
-
-// Incidents -----------------------------------------------------------------
 
 export function createIncident({
-  fecha,
-  domoId,
-  puestoId,
-  elementoId,
-  componenteId = null,
-  descripcion,
-  status = 'open',
-  resolucion = null
+    fecha,
+    domoId,
+    puestoId,
+    elementoId,
+    componenteId = null,
+    descripcion,
+    status = 'open',
+    resolucion = null
 }) {
-  const timestamp = new Date().toISOString();
-  run(
-    `INSERT INTO incidentes(
-      fecha, domo_id, puesto_id, elemento_id, componente_id,
-      status, descripcion, resolucion, created_at, updated_at
-    ) VALUES (
-      :fecha, :domo_id, :puesto_id, :elemento_id, :componente_id,
-      :status, :descripcion, :resolucion, :created_at, :updated_at
-    );`,
-    {
-      ':fecha': fecha,
-      ':domo_id': domoId,
-      ':puesto_id': puestoId,
-      ':elemento_id': elementoId,
-      ':componente_id': componenteId,
-      ':status': status,
-      ':descripcion': descripcion,
-      ':resolucion': resolucion,
-      ':created_at': timestamp,
-      ':updated_at': timestamp
-    }
-  );
-  const id = getLastInsertId();
-  return getIncidentById(id);
-}
+    const incidentDate = fecha || new Date().toISOString().split('T')[0];
+    const description = cleanText(descripcion);
+    const resolution = resolucion != null ? cleanText(resolucion) : null;
+    const timestamp = new Date().toISOString();
 
-export function getIncidentById(id) {
-  const rows = select(
-    `SELECT i.*,
-            d.nombre AS domo_nombre,
-            p.nombre AS puesto_nombre,
-            e.nombre AS elemento_nombre,
-            comp.nombre AS componente_nombre,
-            parent.nombre AS componente_padre
-     FROM incidentes i
-     JOIN domos d ON d.id = i.domo_id
-     JOIN puestos p ON p.id = i.puesto_id
-     JOIN elementos e ON e.id = i.elemento_id
-     LEFT JOIN componentes comp ON comp.id = i.componente_id
-     LEFT JOIN componentes parent ON comp.parent_id = parent.id
-     WHERE i.id = :id
-     LIMIT 1;`,
-    { ':id': id }
-  );
-  if (!rows.length) return null;
-  return mapIncidentRow(rows[0]);
+    const record = {
+        id: generateId('incidentes'),
+        fecha: incidentDate,
+        domoId: Number(domoId),
+        puestoId: Number(puestoId),
+        elementoId: Number(elementoId),
+        componenteId: componenteId != null ? Number(componenteId) : null,
+        status,
+        descripcion: description,
+        resolucion: resolution,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        closedAt: status === 'closed' ? timestamp : null
+    };
+
+    store.incidentes.push(record);
+    saveStore();
+    return mapIncident(record);
 }
 
 export function listIncidents({ status = null } = {}) {
-  const where = status ? 'WHERE i.status = :status' : '';
-  const rows = select(
-    `SELECT i.*,
-            d.nombre AS domo_nombre,
-            p.nombre AS puesto_nombre,
-            e.nombre AS elemento_nombre,
-            comp.nombre AS componente_nombre,
-            parent.nombre AS componente_padre
-     FROM incidentes i
-     JOIN domos d ON d.id = i.domo_id
-     JOIN puestos p ON p.id = i.puesto_id
-     JOIN elementos e ON e.id = i.elemento_id
-     LEFT JOIN componentes comp ON comp.id = i.componente_id
-     LEFT JOIN componentes parent ON comp.parent_id = parent.id
-     ${where}
-     ORDER BY i.created_at DESC;`,
-    status ? { ':status': status } : {}
-  );
-  return rows.map(mapIncidentRow);
-}
+    const records = store.incidentes
+        .slice()
+        .filter(record => (status ? record.status === status : true))
+        .sort((a, b) => {
+            const keyA = a.createdAt || '';
+            const keyB = b.createdAt || '';
+            if (keyA === keyB) {
+                return b.id - a.id;
+            }
+            return keyB.localeCompare(keyA);
+        });
 
-function mapIncidentRow(row) {
-  const componentPath = row.componente_padre
-    ? `${row.componente_padre} / ${row.componente_nombre}`
-    : row.componente_nombre || null;
-
-  return {
-    id: Number(row.id),
-    fecha: row.fecha,
-    status: row.status,
-    descripcion: row.descripcion,
-    resolucion: row.resolucion,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    closedAt: row.closed_at,
-    domo: { id: Number(row.domo_id), nombre: row.domo_nombre },
-    puesto: { id: Number(row.puesto_id), nombre: row.puesto_nombre },
-    elemento: { id: Number(row.elemento_id), nombre: row.elemento_nombre },
-    componente: componentPath
-  };
+    return records.map(mapIncident);
 }
 
 export function resolveIncident(id, resolucion) {
-  const timestamp = new Date().toISOString();
-  run(
-    `UPDATE incidentes
-     SET status = 'closed',
-         resolucion = :resolucion,
-         closed_at = :closed_at,
-         updated_at = :updated_at
-     WHERE id = :id;`,
-    {
-      ':id': id,
-      ':resolucion': resolucion,
-      ':closed_at': timestamp,
-      ':updated_at': timestamp
+    const record = getIncidentRecord(id);
+    if (!record) {
+        return null;
     }
-  );
-  return getIncidentById(id);
+    record.status = 'closed';
+    record.resolucion = cleanText(resolucion);
+    record.closedAt = new Date().toISOString();
+    record.updatedAt = record.closedAt;
+    saveStore();
+    return mapIncident(record);
 }
 
 export function reopenIncident(id) {
-  const timestamp = new Date().toISOString();
-  run(
-    `UPDATE incidentes
-     SET status = 'open',
-         closed_at = NULL,
-         resolucion = NULL,
-         updated_at = :updated_at
-     WHERE id = :id;`,
-    {
-      ':id': id,
-      ':updated_at': timestamp
+    const record = getIncidentRecord(id);
+    if (!record) {
+        return null;
     }
-  );
-  return getIncidentById(id);
+    record.status = 'open';
+    record.resolucion = null;
+    record.closedAt = null;
+    record.updatedAt = new Date().toISOString();
+    saveStore();
+    return mapIncident(record);
 }
 
 export function deleteIncident(id) {
-  run('DELETE FROM incidentes WHERE id = :id;', { ':id': id });
+    const index = findIncidentIndex(id);
+    if (index === -1) {
+        return;
+    }
+    store.incidentes.splice(index, 1);
+    saveStore();
 }
 
 export function getIncidentStatistics() {
-  const total = select('SELECT COUNT(*) as total FROM incidentes;')[0]?.total ?? 0;
+    const total = store.incidentes.length;
+    const statusMap = new Map();
+    const elementoMap = new Map();
+    const componenteMap = new Map();
 
-  const byStatus = select(
-    'SELECT status, COUNT(*) as total FROM incidentes GROUP BY status;'
-  ).map(row => ({
-    status: row.status,
-    total: Number(row.total)
-  }));
+    store.incidentes.forEach(record => {
+        statusMap.set(record.status, (statusMap.get(record.status) || 0) + 1);
 
-  const byElemento = select(
-    `SELECT e.nombre as elemento, COUNT(*) as total
-     FROM incidentes i
-     JOIN elementos e ON e.id = i.elemento_id
-     GROUP BY e.id
-     ORDER BY total DESC;`
-  ).map(row => ({
-    elemento: row.elemento,
-    total: Number(row.total)
-  }));
+        const elemento = getElementoRecord(record.elementoId);
+        const elementoNombre = elemento ? elemento.nombre : 'No definido';
+        elementoMap.set(elementoNombre, (elementoMap.get(elementoNombre) || 0) + 1);
 
-  const topComponentes = select(
-    `SELECT 
-        COALESCE(parent.nombre || ' / ' || comp.nombre, comp.nombre, 'Sin componente') AS componente,
-        COUNT(*) as total
-     FROM incidentes i
-     LEFT JOIN componentes comp ON comp.id = i.componente_id
-     LEFT JOIN componentes parent ON comp.parent_id = parent.id
-     GROUP BY componente
-     ORDER BY total DESC;`
-  ).map(row => ({
-    componente: row.componente || 'Sin componente',
-    total: Number(row.total)
-  }));
+        const componente = record.componenteId ? getComponentRecord(record.componenteId) : null;
+        const parent = componente && componente.parentId ? getComponentRecord(componente.parentId) : null;
+        const componenteNombre = componente
+            ? parent
+                ? `${parent.nombre} / ${componente.nombre}`
+                : componente.nombre
+            : 'Sin componente';
+        componenteMap.set(componenteNombre, (componenteMap.get(componenteNombre) || 0) + 1);
+    });
 
-  const abiertos = byStatus.find(item => item.status === 'open')?.total ?? 0;
-  const cerrados = byStatus.find(item => item.status === 'closed')?.total ?? 0;
+    const porEstado = Array.from(statusMap.entries())
+        .map(([status, count]) => ({ status, total: count }))
+        .sort((a, b) => b.total - a.total);
 
-  return {
-    total: Number(total),
-    abiertos,
-    cerrados,
-    porEstado: byStatus,
-    porElemento: byElemento,
-    porComponente: topComponentes
-  };
+    const porElemento = Array.from(elementoMap.entries())
+        .map(([elemento, count]) => ({ elemento, total: count }))
+        .sort((a, b) => b.total - a.total);
+
+    const porComponente = Array.from(componenteMap.entries())
+        .map(([componente, count]) => ({ componente, total: count }))
+        .sort((a, b) => b.total - a.total);
+
+    return {
+        total,
+        abiertos: statusMap.get('open') || 0,
+        cerrados: statusMap.get('closed') || 0,
+        porEstado,
+        porElemento,
+        porComponente
+    };
 }
 
 export function exportIncidentsPayload() {
-  const incidents = listIncidents();
-  const stats = getIncidentStatistics();
-  return JSON.stringify(
-    {
-      generatedAt: new Date().toISOString(),
-      incidents,
-      statistics: stats
-    },
-    null,
-    2
-  );
+    const payload = {
+        generatedAt: new Date().toISOString(),
+        incidents: listIncidents(),
+        statistics: getIncidentStatistics()
+    };
+    return JSON.stringify(payload, null, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function createEmptyStore() {
+    return {
+        meta: { schemaVersion: 0 },
+        domos: [],
+        puestos: [],
+        elementos: [],
+        componentes: [],
+        incidentes: [],
+        counters: {
+            domos: 1,
+            puestos: 1,
+            elementos: 1,
+            componentes: 1,
+            incidentes: 1
+        }
+    };
+}
+
+function ensureSchema() {
+    if (store.meta.schemaVersion !== SCHEMA_VERSION) {
+        store = createEmptyStore();
+        store.meta.schemaVersion = SCHEMA_VERSION;
+        seedBaseStructure();
+        return;
+    }
+
+    store.meta.schemaVersion = SCHEMA_VERSION;
+    if (!store.domos.length) {
+        seedBaseStructure();
+    }
+}
+
+function seedBaseStructure() {
+    if (store.domos.length) {
+        return;
+    }
+
+    const base = createBaseStructure();
+    base.forEach(domo => {
+        const domoId = getOrCreateDomo(domo.nombre);
+        domo.puestos.forEach(puesto => {
+            const puestoId = getOrCreatePuesto(domoId, puesto.nombre);
+            puesto.elementos.forEach(elemento => {
+                const elementoId = getOrCreateElemento(puestoId, elemento.nombre);
+                elemento.componentes.forEach(componente => {
+                    if (typeof componente === 'string') {
+                        getOrCreateComponente(elementoId, componente);
+                    } else if (componente && typeof componente === 'object') {
+                        const parentId = getOrCreateComponente(elementoId, componente.nombre);
+                        (componente.subcomponentes || []).forEach(sub => {
+                            getOrCreateComponente(elementoId, sub, parentId);
+                        });
+                    }
+                });
+            });
+        });
+    });
+
+    recalcCounters();
+    saveStore();
+}
+
+function createBaseStructure() {
+    return ['Domo 1', 'Domo 2'].map(nombre => ({
+        nombre,
+        puestos: createDefaultPuestos()
+    }));
+}
+
+function createDefaultPuestos() {
+    return [
+        createInstructorPuesto(),
+        createJTACPuesto(),
+        createPilotoPuesto()
+    ];
+}
+
+function createInstructorPuesto() {
+    return {
+        nombre: 'Instructor',
+        elementos: [
+            {
+                nombre: 'Servidor VBS',
+                componentes: [
+                    { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
+                    'Extensor USB',
+                    'Monitor VBS',
+                    'Monitor Visual',
+                    'Teclado',
+                    'Raton'
+                ]
+            },
+            {
+                nombre: 'Servidor IOS',
+                componentes: [
+                    { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
+                    'Extensor USB',
+                    'Monitor IOS',
+                    'Joystick'
+                ]
+            }
+        ]
+    };
+}
+
+function createJTACPuesto() {
+    return {
+        nombre: 'JTAC',
+        elementos: [
+            {
+                nombre: 'Servidor Host',
+                componentes: ['Tablet Rover']
+            },
+            {
+                nombre: 'Servidor Radio',
+                componentes: ['Mini PC', 'Radio Maquetada', 'Cascos']
+            },
+            {
+                nombre: 'Servidor Proyeccion',
+                componentes: [
+                    { nombre: 'Cable', subcomponentes: ['USB'] },
+                    'Extensor USB',
+                    'DAGR',
+                    'Puntero',
+                    'Mando BT'
+                ]
+            },
+            {
+                nombre: 'Servidor LTD',
+                componentes: [
+                    { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
+                    'Extensor USB',
+                    'LTD'
+                ]
+            },
+            {
+                nombre: 'Servidor Moskito',
+                componentes: [
+                    { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
+                    'Extensor USB',
+                    'Moskito'
+                ]
+            },
+            {
+                nombre: 'Servidor Jim Compact',
+                componentes: [
+                    { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
+                    'Extensor USB',
+                    'Jim Compact'
+                ]
+            }
+        ]
+    };
+}
+
+function createPilotoPuesto() {
+    return {
+        nombre: 'Piloto',
+        elementos: [
+            {
+                nombre: 'Servidor Radio',
+                componentes: ['Mini PC', 'Radio Maquetada', 'Cascos']
+            },
+            {
+                nombre: 'Servidor VBS',
+                componentes: [
+                    'Palanca de Gases',
+                    'Pedales',
+                    'Joystick HOTAS',
+                    { nombre: 'Cable', subcomponentes: ['USB'] },
+                    'Extensor USB',
+                    'Monitor VBS + Instrumentacion'
+                ]
+            },
+            {
+                nombre: 'Servidor IOS',
+                componentes: [
+                    { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
+                    'Extensor USB',
+                    'Monitor IOS',
+                    'Teclado + Trackpad'
+                ]
+            },
+            {
+                nombre: 'Servidor Rover',
+                componentes: [
+                    'Monitor VBS',
+                    { nombre: 'Cable', subcomponentes: ['Video', 'USB'] },
+                    'Extensor USB'
+                ]
+            }
+        ]
+    };
+}
+
+function loadStore() {
+    persistenceAvailable = canUseLocalStorage();
+    if (!persistenceAvailable) {
+        store = createEmptyStore();
+        return;
+    }
+
+    try {
+        const raw = window.localStorage.getItem(STORE_KEY);
+        if (raw) {
+            store = normalizeStore(JSON.parse(raw));
+        } else {
+            store = createEmptyStore();
+        }
+    } catch (error) {
+        console.warn('[Store] No se pudo cargar el almacenamiento local.', error);
+        persistenceAvailable = false;
+        store = createEmptyStore();
+    }
+
+    recalcCounters();
+}
+
+function saveStore() {
+    if (!persistenceAvailable) {
+        return;
+    }
+    try {
+        window.localStorage.setItem(STORE_KEY, JSON.stringify(store));
+    } catch (error) {
+        persistenceAvailable = false;
+        console.warn('[Store] No se pudo guardar el almacenamiento local.', error);
+    }
+}
+
+function normalizeStore(parsed) {
+    const fresh = createEmptyStore();
+    if (!parsed || typeof parsed !== 'object') {
+        return fresh;
+    }
+
+    fresh.meta.schemaVersion = Number(parsed.meta?.schemaVersion ?? 0) || 0;
+
+    if (Array.isArray(parsed.domos)) {
+        fresh.domos = parsed.domos
+            .map(item => ({
+                id: Number(item.id),
+                nombre: cleanName(item.nombre)
+            }))
+            .filter(item => !Number.isNaN(item.id) && item.nombre);
+    }
+
+    if (Array.isArray(parsed.puestos)) {
+        fresh.puestos = parsed.puestos
+            .map(item => ({
+                id: Number(item.id),
+                domoId: Number(item.domoId ?? item.domo_id),
+                nombre: cleanName(item.nombre)
+            }))
+            .filter(item => !Number.isNaN(item.id) && !Number.isNaN(item.domoId) && item.nombre);
+    }
+
+    if (Array.isArray(parsed.elementos)) {
+        fresh.elementos = parsed.elementos
+            .map(item => ({
+                id: Number(item.id),
+                puestoId: Number(item.puestoId ?? item.puesto_id),
+                nombre: cleanName(item.nombre)
+            }))
+            .filter(item => !Number.isNaN(item.id) && !Number.isNaN(item.puestoId) && item.nombre);
+    }
+
+    if (Array.isArray(parsed.componentes)) {
+        fresh.componentes = parsed.componentes
+            .map(item => ({
+                id: Number(item.id),
+                elementoId: Number(item.elementoId ?? item.elemento_id),
+                parentId:
+                    item.parentId != null || item.parent_id != null
+                        ? Number(item.parentId ?? item.parent_id)
+                        : null,
+                nombre: cleanName(item.nombre)
+            }))
+            .filter(
+                item =>
+                    !Number.isNaN(item.id) &&
+                    !Number.isNaN(item.elementoId) &&
+                    item.nombre &&
+                    (item.parentId == null || !Number.isNaN(item.parentId))
+            );
+    }
+
+    if (Array.isArray(parsed.incidentes)) {
+        fresh.incidentes = parsed.incidentes
+            .map(item => ({
+                id: Number(item.id),
+                fecha: item.fecha || '',
+                domoId: Number(item.domoId ?? item.domo_id),
+                puestoId: Number(item.puestoId ?? item.puesto_id),
+                elementoId: Number(item.elementoId ?? item.elemento_id),
+                componenteId:
+                    item.componenteId != null || item.componente_id != null
+                        ? Number(item.componenteId ?? item.componente_id)
+                        : null,
+                status: item.status || 'open',
+                descripcion: cleanText(item.descripcion),
+                resolucion: item.resolucion != null ? cleanText(item.resolucion) : null,
+                createdAt: item.createdAt || item.created_at || new Date().toISOString(),
+                updatedAt: item.updatedAt || item.updated_at || new Date().toISOString(),
+                closedAt: item.closedAt || item.closed_at || null
+            }))
+            .filter(
+                item =>
+                    !Number.isNaN(item.id) &&
+                    !Number.isNaN(item.domoId) &&
+                    !Number.isNaN(item.puestoId) &&
+                    !Number.isNaN(item.elementoId)
+            );
+    }
+
+    if (parsed.counters && typeof parsed.counters === 'object') {
+        fresh.counters = {
+            domos: Number(parsed.counters.domos) || fresh.counters.domos,
+            puestos: Number(parsed.counters.puestos) || fresh.counters.puestos,
+            elementos: Number(parsed.counters.elementos) || fresh.counters.elementos,
+            componentes: Number(parsed.counters.componentes) || fresh.counters.componentes,
+            incidentes: Number(parsed.counters.incidentes) || fresh.counters.incidentes
+        };
+    }
+
+    return fresh;
+}
+
+function recalcCounters() {
+    store.counters.domos = nextId(store.domos);
+    store.counters.puestos = nextId(store.puestos);
+    store.counters.elementos = nextId(store.elementos);
+    store.counters.componentes = nextId(store.componentes);
+    store.counters.incidentes = nextId(store.incidentes);
+}
+
+function nextId(collection) {
+    let max = 0;
+    collection.forEach(item => {
+        const value = Number(item.id);
+        if (!Number.isNaN(value)) {
+            item.id = value;
+            if (value > max) {
+                max = value;
+            }
+        }
+    });
+    return max + 1;
+}
+
+function canUseLocalStorage() {
+    try {
+        if (typeof window === 'undefined' || !('localStorage' in window)) {
+            return false;
+        }
+        const testKey = '__simjtac_test__';
+        window.localStorage.setItem(testKey, '1');
+        window.localStorage.removeItem(testKey);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function getOrCreateDomo(nombre) {
+    const clean = cleanName(nombre);
+    let record = store.domos.find(item => sameName(item.nombre, clean));
+    if (record) {
+        return record.id;
+    }
+    const id = generateId('domos');
+    record = { id, nombre: clean };
+    store.domos.push(record);
+    return id;
+}
+
+function getOrCreatePuesto(domoId, nombre) {
+    const clean = cleanName(nombre);
+    let record = store.puestos.find(
+        item => item.domoId === domoId && sameName(item.nombre, clean)
+    );
+    if (record) {
+        return record.id;
+    }
+    const id = generateId('puestos');
+    record = { id, domoId, nombre: clean };
+    store.puestos.push(record);
+    return id;
+}
+
+function getOrCreateElemento(puestoId, nombre) {
+    const clean = cleanName(nombre);
+    let record = store.elementos.find(
+        item => item.puestoId === puestoId && sameName(item.nombre, clean)
+    );
+    if (record) {
+        return record.id;
+    }
+    const id = generateId('elementos');
+    record = { id, puestoId, nombre: clean };
+    store.elementos.push(record);
+    return id;
+}
+
+function getOrCreateComponente(elementoId, nombre, parentId = null) {
+    const clean = cleanName(nombre);
+    const normalizedParent = parentId != null ? Number(parentId) : null;
+    let record = store.componentes.find(
+        item =>
+            item.elementoId === elementoId &&
+            (item.parentId ?? null) === (normalizedParent ?? null) &&
+            sameName(item.nombre, clean)
+    );
+    if (record) {
+        return record.id;
+    }
+    const id = generateId('componentes');
+    record = { id, elementoId, parentId: normalizedParent, nombre: clean };
+    store.componentes.push(record);
+    return id;
+}
+
+function getIncidentRecord(id) {
+    const numeric = Number(id);
+    if (Number.isNaN(numeric)) {
+        return null;
+    }
+    return store.incidentes.find(item => item.id === numeric) || null;
+}
+
+function findIncidentIndex(id) {
+    const numeric = Number(id);
+    if (Number.isNaN(numeric)) {
+        return -1;
+    }
+    return store.incidentes.findIndex(item => item.id === numeric);
+}
+
+function getDomoRecord(id) {
+    const numeric = Number(id);
+    if (Number.isNaN(numeric)) {
+        return null;
+    }
+    return store.domos.find(item => item.id === numeric) || null;
+}
+
+function getPuestoRecord(id) {
+    const numeric = Number(id);
+    if (Number.isNaN(numeric)) {
+        return null;
+    }
+    return store.puestos.find(item => item.id === numeric) || null;
+}
+
+function getElementoRecord(id) {
+    const numeric = Number(id);
+    if (Number.isNaN(numeric)) {
+        return null;
+    }
+    return store.elementos.find(item => item.id === numeric) || null;
+}
+
+function getComponentRecord(id) {
+    const numeric = Number(id);
+    if (Number.isNaN(numeric)) {
+        return null;
+    }
+    return store.componentes.find(item => item.id === numeric) || null;
+}
+
+function findDomo(id) {
+    const record = getDomoRecord(id);
+    return record ? { id: record.id, nombre: record.nombre } : null;
+}
+
+function findPuesto(id) {
+    const record = getPuestoRecord(id);
+    return record ? { id: record.id, nombre: record.nombre, domo_id: record.domoId } : null;
+}
+
+function findElemento(id) {
+    const record = getElementoRecord(id);
+    return record ? { id: record.id, nombre: record.nombre, puesto_id: record.puestoId } : null;
+}
+
+function mapIncident(record) {
+    const domo = getDomoRecord(record.domoId);
+    const puesto = getPuestoRecord(record.puestoId);
+    const elemento = getElementoRecord(record.elementoId);
+    const componente = record.componenteId ? getComponentRecord(record.componenteId) : null;
+    const parent = componente && componente.parentId ? getComponentRecord(componente.parentId) : null;
+
+    const componentePath = componente
+        ? parent
+            ? `${parent.nombre} / ${componente.nombre}`
+            : componente.nombre
+        : null;
+
+    return {
+        id: record.id,
+        fecha: record.fecha,
+        status: record.status,
+        descripcion: record.descripcion,
+        resolucion: record.resolucion,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        closedAt: record.closedAt,
+        domo: domo ? { id: domo.id, nombre: domo.nombre } : { id: record.domoId, nombre: 'No definido' },
+        puesto: puesto
+            ? { id: puesto.id, nombre: puesto.nombre }
+            : { id: record.puestoId, nombre: 'No definido' },
+        elemento: elemento
+            ? { id: elemento.id, nombre: elemento.nombre }
+            : { id: record.elementoId, nombre: 'No definido' },
+        componente: componentePath
+    };
+}
+
+function cleanName(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function cleanText(value) {
+    if (value == null) {
+        return '';
+    }
+    return String(value).trim();
+}
+
+function sameName(a, b) {
+    return cleanName(a).toLowerCase() === cleanName(b).toLowerCase();
+}
+
+function sortByName(a, b) {
+    return a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' });
+}
+
+function generateId(key) {
+    if (!store.counters[key] || store.counters[key] < 1) {
+        store.counters[key] = 1;
+    }
+    const value = store.counters[key];
+    store.counters[key] = value + 1;
+    return value;
 }
