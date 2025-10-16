@@ -21,7 +21,13 @@ import {
     reopenIncident as reopenIncidentRecord,
     deleteIncident,
     getIncidentStatistics,
-    exportIncidentsPayload
+    exportIncidentsPayload,
+    exportIncidentsCSV,
+    getImpactLevels,
+    getNatureOptions as getNatureOptionsDb,
+    updateIncidentDetails,
+    setIncidentStatus as setIncidentStatusDb,
+    getIncidentStatuses as getIncidentStatusesDb
 } from '../../db.js';
 
 export class IncidentSystem {
@@ -67,22 +73,50 @@ export class IncidentSystem {
         return getComponenteById(componentId);
     }
 
+    getImpactOptions() {
+        return getImpactLevels();
+    }
+
+    getNatureOptions() {
+        return getNatureOptionsDb();
+    }
+
+    getStatusOptions() {
+        return getIncidentStatusesDb();
+    }
+
+    getIncident(id) {
+        const numeric = Number(id);
+        if (Number.isNaN(numeric)) {
+            return null;
+        }
+        return listIncidentsDb().find(item => item.id === numeric) ?? null;
+    }
+
     // Incidents -------------------------------------------------------------
 
     createIncident(payload) {
         return createIncident(payload);
     }
 
-    listIncidents({ status = null } = {}) {
-        return listIncidentsDb({ status });
+    listIncidents({ status = null, domoId = null, puestoId = null, elementoId = null, impacto = null, search = null } = {}) {
+        return listIncidentsDb({ status, domoId, puestoId, elementoId, impacto, search });
     }
 
-    closeIncident(id, resolucion) {
-        return resolveIncident(id, resolucion);
+    closeIncident(id, payload) {
+        return resolveIncident(id, payload);
     }
 
     reopenIncident(id) {
         return reopenIncidentRecord(id);
+    }
+
+    updateIncident(id, payload) {
+        return updateIncidentDetails(id, payload);
+    }
+
+    setIncidentStatus(id, status) {
+        return setIncidentStatusDb(id, status);
     }
 
     removeIncident(id) {
@@ -95,5 +129,9 @@ export class IncidentSystem {
 
     exportToJSON() {
         return exportIncidentsPayload();
+    }
+
+    exportToCSV() {
+        return exportIncidentsCSV();
     }
 }

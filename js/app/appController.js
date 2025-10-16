@@ -95,12 +95,7 @@ export class AppController {
     handleSubmenuClick(buttonId, optionId, optionData) {
         if (optionData.type === 'incident') {
             this.state.openContent(buttonId, optionId);
-            const content = this.incidentUI.renderIncidentsList();
-            this.showContentDirect({
-                title: optionData.title || 'Incidencias',
-                type: 'text',
-                content
-            });
+            this.incidentUI.showIncidentsList();
             return;
         }
 
@@ -230,12 +225,7 @@ export class AppController {
         }
 
         if (optionConfig.type === 'incident') {
-            const content = this.incidentUI.renderIncidentsList();
-            this.showContentDirect({
-                title: optionConfig.title || 'Incidencias',
-                type: 'text',
-                content
-            });
+            this.incidentUI.showIncidentsList();
             return;
         }
 
