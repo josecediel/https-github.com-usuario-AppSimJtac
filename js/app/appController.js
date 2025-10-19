@@ -95,7 +95,7 @@ export class AppController {
     handleSubmenuClick(buttonId, optionId, optionData) {
         if (optionData.type === 'incident') {
             this.state.openContent(buttonId, optionId);
-            this.incidentUI.showIncidentsList();
+            this.incidentUI.showHome();
             return;
         }
 

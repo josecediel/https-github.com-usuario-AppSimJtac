@@ -99,8 +99,8 @@ export class IncidentSystem {
         return createIncident(payload);
     }
 
-    listIncidents({ status = null, domoId = null, puestoId = null, elementoId = null, impacto = null, search = null } = {}) {
-        return listIncidentsDb({ status, domoId, puestoId, elementoId, impacto, search });
+    listIncidents(filters = {}) {
+        return listIncidentsDb({ ...filters });
     }
 
     closeIncident(id, payload) {
@@ -123,15 +123,15 @@ export class IncidentSystem {
         deleteIncident(id);
     }
 
-    getStatistics() {
-        return getIncidentStatistics();
+    getStatistics(filters = null) {
+        return getIncidentStatistics(filters ?? null);
     }
 
-    exportToJSON() {
-        return exportIncidentsPayload();
+    exportToJSON(filters = null) {
+        return exportIncidentsPayload(filters ?? null);
     }
 
-    exportToCSV() {
-        return exportIncidentsCSV();
+    exportToCSV(filters = null) {
+        return exportIncidentsCSV(filters ?? null);
     }
 }

@@ -1,5 +1,5 @@
-const STORE_KEY = 'simjtac_incidents_store_v3';
-const SCHEMA_VERSION = 3;
+const STORE_KEY = 'simjtac_incidents_store_v4';
+const SCHEMA_VERSION = 4;
 
 const IMPACT_LEVELS = [
     { id: 'alta', label: 'Alta' },
@@ -11,6 +11,8 @@ const NATURE_OPTIONS = [
     { id: 'hardware', label: 'Hardware' },
     { id: 'software', label: 'Software' },
     { id: 'configuracion', label: 'Configuracion' },
+    { id: 'obsolescencia', label: 'Obsolescencia' },
+    { id: 'uso_indebido', label: 'Uso indebido' },
     { id: 'conectividad', label: 'Conectividad' }
 ];
 
@@ -100,6 +102,8 @@ export function getComponentesByElemento(elementoId) {
             tipo: parent.tipo ?? null,
             jerarquia: parent.jerarquia ?? null,
             cableTipo: parent.cableTipo ?? null,
+            finFlujo: Boolean(parent.finFlujo),
+            nota: parent.nota ?? null,
             hijos: store.componentes
                 .filter(child => child.parentId === parent.id)
                 .slice()
@@ -109,7 +113,9 @@ export function getComponentesByElemento(elementoId) {
                     nombre: child.nombre,
                     tipo: child.tipo ?? null,
                     jerarquia: child.jerarquia ?? null,
-                    cableTipo: child.cableTipo ?? null
+                    cableTipo: child.cableTipo ?? null,
+                    finFlujo: Boolean(child.finFlujo),
+                    nota: child.nota ?? null
                 }))
         }));
 }
@@ -149,6 +155,8 @@ export function getComponenteById(id) {
         id: record.id,
         nombre: record.nombre,
         parent: parent ? { id: parent.id, nombre: parent.nombre } : null,
+        finFlujo: Boolean(record.finFlujo),
+        nota: record.nota ?? null,
         elemento_id: record.elementoId
     };
 }
@@ -193,10 +201,13 @@ export function createIncident({
         closedAt: normalizedStatus === 'closed' ? timestamp : null,
         fechaCierre: normalizedStatus === 'closed' ? incidentDate : null,
         impacto: impact,
-        naturaleza: null
+        naturaleza: null,
+        recurrente: false,
+        tiempoResolucion: null
     };
 
     store.incidentes.push(record);
+    recalcRecurrenceForKey(getRecurrenceKey(record));
     saveStore();
     return mapIncident(record);
 }
@@ -208,11 +219,37 @@ export function listIncidents(options = {}) {
         puestoId: options.puestoId ?? options.filters?.puestoId ?? null,
         elementoId: options.elementoId ?? options.filters?.elementoId ?? null,
         impacto: options.impacto ?? options.filters?.impacto ?? null,
+        naturaleza: options.naturaleza ?? options.filters?.naturaleza ?? null,
+        recurrente: options.recurrente ?? options.filters?.recurrente ?? null,
+        fechaDesde: options.fechaDesde ?? options.filters?.fechaDesde ?? null,
+        fechaHasta: options.fechaHasta ?? options.filters?.fechaHasta ?? null,
+        fechaCierreDesde: options.fechaCierreDesde ?? options.filters?.fechaCierreDesde ?? null,
+        fechaCierreHasta: options.fechaCierreHasta ?? options.filters?.fechaCierreHasta ?? null,
         search: options.search ?? options.filters?.search ?? null
     };
 
     const normalizedStatus = filters.status ? normalizeStatus(filters.status) : null;
+    const normalizedNature =
+        filters.naturaleza && filters.naturaleza !== 'sin_definir'
+            ? normalizeNature(filters.naturaleza)
+            : null;
+    const natureFilter =
+        filters.naturaleza === 'sin_definir' ? 'sin_definir' : normalizedNature;
     const searchTerm = typeof filters.search === 'string' ? filters.search.trim().toLowerCase() : '';
+    const recurrentFilter =
+        filters.recurrente === true ||
+        filters.recurrente === 'true' ||
+        filters.recurrente === 'yes'
+            ? true
+            : filters.recurrente === false ||
+                    filters.recurrente === 'false' ||
+                    filters.recurrente === 'no'
+                ? false
+                : null;
+    const fechaDesde = filters.fechaDesde ? parseDateValue(filters.fechaDesde) : null;
+    const fechaHasta = filters.fechaHasta ? parseDateValue(filters.fechaHasta) : null;
+    const cierreDesde = filters.fechaCierreDesde ? parseDateValue(filters.fechaCierreDesde) : null;
+    const cierreHasta = filters.fechaCierreHasta ? parseDateValue(filters.fechaCierreHasta) : null;
 
     const records = store.incidentes
         .slice()
@@ -235,13 +272,60 @@ export function listIncidents(options = {}) {
                     return false;
                 }
             }
+            if (natureFilter) {
+                if (natureFilter === 'sin_definir') {
+                    if (record.naturaleza != null) {
+                        return false;
+                    }
+                } else if (record.naturaleza !== natureFilter) {
+                    return false;
+                }
+            }
+            if (recurrentFilter !== null) {
+                const isRecurrent = Boolean(record.recurrente);
+                if (recurrentFilter !== isRecurrent) {
+                    return false;
+                }
+            }
+            if (fechaDesde || fechaHasta) {
+                const apertura = parseDateValue(record.fecha);
+                if (!apertura) {
+                    return false;
+                }
+                if (fechaDesde && apertura.getTime() < fechaDesde.getTime()) {
+                    return false;
+                }
+                if (fechaHasta && apertura.getTime() > fechaHasta.getTime()) {
+                    return false;
+                }
+            }
+            if (cierreDesde || cierreHasta) {
+                if (!record.fechaCierre) {
+                    return false;
+                }
+                const cierre = parseDateValue(record.fechaCierre);
+                if (!cierre) {
+                    return false;
+                }
+                if (cierreDesde && cierre.getTime() < cierreDesde.getTime()) {
+                    return false;
+                }
+                if (cierreHasta && cierre.getTime() > cierreHasta.getTime()) {
+                    return false;
+                }
+            }
             if (searchTerm) {
+                const componenteRecord = record.componenteId ? getComponentRecord(record.componenteId) : null;
+                const componenteParent = componenteRecord && componenteRecord.parentId ? getComponentRecord(componenteRecord.parentId) : null;
                 const haystack = [
+                    String(record.id),
                     record.descripcion,
                     record.resolucion,
                     getDomoRecord(record.domoId)?.nombre,
                     getPuestoRecord(record.puestoId)?.nombre,
-                    getElementoRecord(record.elementoId)?.nombre
+                    getElementoRecord(record.elementoId)?.nombre,
+                    componenteParent?.nombre,
+                    componenteRecord?.nombre
                 ]
                     .filter(Boolean)
                     .join(' ')
@@ -282,6 +366,8 @@ export function resolveIncident(
         throw new Error('Naturaleza no valida');
     }
 
+    const previousKey = getRecurrenceKey(record);
+
     if (componenteId !== undefined) {
         record.componenteId = componenteId ? Number(componenteId) : null;
     }
@@ -294,6 +380,11 @@ export function resolveIncident(
     record.closedAt = closure.timestamp;
     record.fechaCierre = closure.date;
     record.updatedAt = record.closedAt;
+    const resolutionDays = diffInDays(record.fecha, closure.date);
+    record.tiempoResolucion = resolutionDays != null ? resolutionDays : null;
+    const newKey = getRecurrenceKey(record);
+    recalcRecurrenceForKey(previousKey);
+    recalcRecurrenceForKey(newKey);
     saveStore();
     return mapIncident(record);
 }
@@ -358,13 +449,19 @@ export function reopenIncident(id) {
     if (!record) {
         return null;
     }
+    const previousKey = getRecurrenceKey(record);
     record.status = 'open';
     record.resolucion = null;
     record.naturaleza = null;
     record.closedAt = null;
     record.fechaCierre = null;
     record.componenteId = null;
+    record.recurrente = false;
+    record.tiempoResolucion = null;
     record.updatedAt = new Date().toISOString();
+    const newKey = getRecurrenceKey(record);
+    recalcRecurrenceForKey(previousKey);
+    recalcRecurrenceForKey(newKey);
     saveStore();
     return mapIncident(record);
 }
@@ -374,78 +471,95 @@ export function deleteIncident(id) {
     if (index === -1) {
         return;
     }
+    const record = store.incidentes[index];
+    const key = record ? getRecurrenceKey(record) : null;
     store.incidentes.splice(index, 1);
+    recalcRecurrenceForKey(key);
     saveStore();
 }
 
-export function getIncidentStatistics() {
-    const total = store.incidentes.length;
+export function getIncidentStatistics(filters = null) {
+    const incidents = listIncidents(filters ?? {});
+    const total = incidents.length;
     const statusMap = new Map();
     const elementoMap = new Map();
     const componenteMap = new Map();
     const impactMap = new Map();
     const natureMap = new Map();
     const weekMap = new Map();
+    const dailyOpen = new Map();
+    const dailyClosed = new Map();
     const openDurations = [];
     const elementClosureMap = new Map();
+    const natureClosureMap = new Map();
+    let mttrTotalSum = 0;
+    let mttrTotalCount = 0;
     const now = new Date();
 
-    store.incidentes.forEach(record => {
-        statusMap.set(record.status, (statusMap.get(record.status) || 0) + 1);
+    incidents.forEach(incident => {
+        statusMap.set(incident.status, (statusMap.get(incident.status) || 0) + 1);
 
-        const elemento = getElementoRecord(record.elementoId);
-        const elementoNombre = elemento ? elemento.nombre : 'No definido';
+        const elementoNombre = incident.elemento?.nombre ?? 'No definido';
         elementoMap.set(elementoNombre, (elementoMap.get(elementoNombre) || 0) + 1);
 
-        const componente = record.componenteId ? getComponentRecord(record.componenteId) : null;
-        const parent = componente && componente.parentId ? getComponentRecord(componente.parentId) : null;
-        const componenteNombre = componente
-            ? parent
-                ? `${parent.nombre} / ${componente.nombre}`
-                : componente.nombre
-            : 'Sin componente';
+        const componenteNombre = incident.componente ?? 'Sin componente';
         componenteMap.set(componenteNombre, (componenteMap.get(componenteNombre) || 0) + 1);
 
-        const impactKey = record.impacto || 'sin_definir';
+        const impactKey = incident.impacto ?? 'sin_definir';
         impactMap.set(impactKey, (impactMap.get(impactKey) || 0) + 1);
 
-        const natureKey = record.naturaleza || 'sin_definir';
+        const natureKey = incident.naturaleza ?? 'sin_definir';
         natureMap.set(natureKey, (natureMap.get(natureKey) || 0) + 1);
 
-        const weekKey = toISOWeek(record.fecha);
+        const weekKey = toISOWeek(incident.fecha);
         if (weekKey) {
             weekMap.set(weekKey, (weekMap.get(weekKey) || 0) + 1);
         }
 
-        const cierreReferencia =
-            record.status === 'closed' && record.fechaCierre ? record.fechaCierre : null;
+        const apertura = (incident.fecha ?? '').slice(0, 10);
+        if (apertura) {
+            dailyOpen.set(apertura, (dailyOpen.get(apertura) || 0) + 1);
+        }
 
-        if (record.status === 'closed' && cierreReferencia) {
-            const dias = diffInDays(record.fecha, cierreReferencia);
+        if (incident.status === 'closed' && incident.fechaCierre) {
+            const cierre = incident.fechaCierre.slice(0, 10);
+            if (cierre) {
+                dailyClosed.set(cierre, (dailyClosed.get(cierre) || 0) + 1);
+            }
+            const dias =
+                incident.tiempoResolucion != null
+                    ? incident.tiempoResolucion
+                    : diffInDays(incident.fecha, incident.fechaCierre);
             if (dias != null) {
-                const key = elemento ? elemento.id : record.elementoId;
-                const current = elementClosureMap.get(key) || {
-                    elementoId: key,
+                const elementoId = incident.elemento?.id ?? incident.elementoId ?? elementoNombre;
+                const elementEntry = elementClosureMap.get(elementoId) || {
+                    elementoId,
                     elemento: elementoNombre,
                     totalDias: 0,
                     total: 0
                 };
-                current.totalDias += dias;
-                current.total += 1;
-                elementClosureMap.set(key, current);
+                elementEntry.totalDias += dias;
+                elementEntry.total += 1;
+                elementClosureMap.set(elementoId, elementEntry);
+
+                const natureEntry = natureClosureMap.get(natureKey) || { total: 0, count: 0 };
+                natureEntry.total += dias;
+                natureEntry.count += 1;
+                natureClosureMap.set(natureKey, natureEntry);
+
+                mttrTotalSum += dias;
+                mttrTotalCount += 1;
             }
         } else {
-            const dias = diffInDays(record.fecha, now);
+            const dias = diffInDays(incident.fecha, now);
             if (dias != null) {
-                const domo = getDomoRecord(record.domoId);
-                const puesto = getPuestoRecord(record.puestoId);
                 openDurations.push({
-                    id: record.id,
+                    id: incident.id,
                     dias,
-                    impacto: record.impacto || null,
-                    status: record.status,
-                    domo: domo ? domo.nombre : 'No definido',
-                    puesto: puesto ? puesto.nombre : 'No definido',
+                    impacto: incident.impacto ?? null,
+                    status: incident.status,
+                    domo: incident.domo?.nombre ?? 'No definido',
+                    puesto: incident.puesto?.nombre ?? 'No definido',
                     elemento: elementoNombre
                 });
             }
@@ -496,6 +610,45 @@ export function getIncidentStatistics() {
         }))
         .sort((a, b) => b.promedio - a.promedio);
 
+    const aging = {
+        le7: openDurations.filter(item => item.dias <= 7).length,
+        between8And30: openDurations.filter(item => item.dias >= 8 && item.dias <= 30).length,
+        gt30: openDurations.filter(item => item.dias > 30).length
+    };
+
+    const abiertasVsCerradas = [
+        {
+            label: 'Abiertas',
+            total: (statusMap.get('open') || 0) + (statusMap.get('in_progress') || 0)
+        },
+        {
+            label: 'Cerradas',
+            total: statusMap.get('closed') || 0
+        }
+    ];
+
+    const fechasCombinadas = Array.from(
+        new Set([...dailyOpen.keys(), ...dailyClosed.keys()])
+    ).sort((a, b) => a.localeCompare(b));
+
+    const porFecha = fechasCombinadas.slice(-30).map(fecha => ({
+        fecha,
+        abiertas: dailyOpen.get(fecha) || 0,
+        cerradas: dailyClosed.get(fecha) || 0
+    }));
+
+    const mttrGeneral =
+        mttrTotalCount > 0 ? Math.round((mttrTotalSum / mttrTotalCount) * 10) / 10 : null;
+
+    const mttrPorNaturaleza = Array.from(natureClosureMap.entries())
+        .map(([nature, data]) => ({
+            naturaleza: nature,
+            label: nature === 'sin_definir' ? 'Sin definir' : getNatureLabel(nature),
+            promedio: Math.round((data.total / data.count) * 10) / 10,
+            total: data.count
+        }))
+        .sort((a, b) => b.promedio - a.promedio);
+
     return {
         total,
         abiertos: statusMap.get('open') || 0,
@@ -507,9 +660,16 @@ export function getIncidentStatistics() {
         porImpacto,
         porNaturaleza,
         porSemana,
+        porFecha,
+        abiertasVsCerradas,
+        aging,
         tiempos: {
             abiertas: abiertasOrdenadas,
             elementos: tiemposPorElemento
+        },
+        mttr: {
+            general: mttrGeneral,
+            porNaturaleza: mttrPorNaturaleza
         }
     };
 }
@@ -526,34 +686,45 @@ export function getIncidentStatuses() {
     return INCIDENT_STATUSES.map(item => ({ ...item }));
 }
 
-export function exportIncidentsPayload() {
+export function exportIncidentsPayload(filters = null) {
+    const params = filters && typeof filters === 'object' ? { ...filters } : null;
+    const incidents = listIncidents(filters ?? {});
     const payload = {
         generatedAt: new Date().toISOString(),
-        incidents: listIncidents(),
-        statistics: getIncidentStatistics()
+        total: incidents.length,
+        filters: params,
+        incidents,
+        statistics: getIncidentStatistics(filters ?? {})
     };
     return JSON.stringify(payload, null, 2);
 }
 
-export function exportIncidentsCSV() {
+export function exportIncidentsCSV(filters = null) {
+    const incidents = listIncidents(filters ?? {});
     const rows = [
         [
             'id',
             'fecha_apertura',
             'fecha_cierre',
             'estado',
+            'estado_label',
             'impacto',
+            'impacto_label',
             'naturaleza',
+            'naturaleza_label',
             'domo',
             'puesto',
             'elemento',
             'componente',
+            'ruta',
             'descripcion',
-            'resolucion'
+            'resolucion',
+            'recurrente',
+            'tiempo_resolucion_dias'
         ].join(';')
     ];
 
-    listIncidents().forEach(incident => {
+    incidents.forEach(incident => {
         const domoNombre = incident.domo?.nombre ?? '';
         const puestoNombre = incident.puesto?.nombre ?? '';
         const elementoNombre = incident.elemento?.nombre ?? '';
@@ -564,15 +735,21 @@ export function exportIncidentsCSV() {
                 incident.id,
                 incident.fecha,
                 incident.fechaCierre ?? '',
+                sanitizeCSV(incident.status ?? ''),
                 sanitizeCSV(incident.statusLabel ?? ''),
+                sanitizeCSV(incident.impacto ?? ''),
                 sanitizeCSV(incident.impactoLabel ?? ''),
+                sanitizeCSV(incident.naturaleza ?? ''),
                 sanitizeCSV(incident.naturalezaLabel ?? ''),
                 sanitizeCSV(domoNombre),
                 sanitizeCSV(puestoNombre),
                 sanitizeCSV(elementoNombre),
                 sanitizeCSV(componenteNombre),
+                sanitizeCSV(incident.ruta ?? ''),
                 sanitizeCSV(incident.descripcion),
-                sanitizeCSV(incident.resolucion ?? '')
+                sanitizeCSV(incident.resolucion ?? ''),
+                incident.recurrente ? 'SI' : 'NO',
+                incident.tiempoResolucion ?? ''
             ].join(';')
         );
     });
@@ -623,7 +800,7 @@ function seedBaseStructure() {
 
     const base = createBaseStructure();
     base.forEach(domo => {
-        const domoId = getOrCreateDomo(domo.nombre);
+        const domoId = getOrCreateDomo(domo.nombre, extractMetadata(domo));
         domo.puestos.forEach(puesto => {
             const puestoId = getOrCreatePuesto(domoId, puesto.nombre, extractMetadata(puesto));
             puesto.elementos.forEach(elemento => {
@@ -673,510 +850,372 @@ function extractMetadata(node) {
     if (node.cableTipo !== undefined) {
         meta.cableTipo = node.cableTipo;
     }
+    if (node.finFlujo !== undefined) {
+        meta.finFlujo = node.finFlujo;
+    }
+    if (node.nota !== undefined) {
+        meta.nota = node.nota;
+    }
     return Object.keys(meta).length ? meta : null;
 }
+
+const FIN_FLOW_NOTE = 'Fin de flujo';
 
 function createBaseStructure() {
     return ['Domo 1', 'Domo 2'].map(nombre => ({
         nombre,
-        puestos: createDefaultPuestos()
+        tipo: 'sala',
+        puestos: [createInstructorPuesto(), createJTACPuesto(), createPilotoPuesto()]
     }));
 }
 
-function createDefaultPuestos() {
-    return [
-        createInstructorPuesto(),
-        createJTACPuesto(),
-        createPilotoPuesto(),
-        createProjectionPuesto()
-    ];
-}
-
 function createInstructorPuesto() {
-    return {
-        nombre: 'Instructor',
-        tipo: 'puesto',
-        jerarquia: 1,
-        elementos: [
-            {
-                nombre: 'Servidor VBS',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Cable principal',
-                        tipo: 'cable',
-                        jerarquia: 2,
+    return puesto('Puesto Instructor', [
+        element('Servidor VBS', 'servidor', [
+            comp('Cable HDMI', 'cable', {
+                cableTipo: 'hdmi',
+                hijos: [terminal('Monitor VBS', 'monitor')]
+            }),
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Extensor USB', 'extensor', {
                         hijos: [
-                            {
-                                nombre: 'Video',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'video'
-                            },
-                            {
-                                nombre: 'USB',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'usb'
-                            }
+                            comp('Cable USB', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('Joystick USB', 'periferico')]
+                            })
                         ]
-                    },
-                    {
-                        nombre: 'Extensor USB',
-                        tipo: 'extensor',
-                        jerarquia: 3,
-                        cableTipo: 'usb'
-                    },
-                    {
-                        nombre: 'Monitor VBS',
-                        tipo: 'monitor',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Monitor Visual',
-                        tipo: 'monitor',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Teclado',
-                        tipo: 'periferico',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Raton',
-                        tipo: 'periferico',
-                        jerarquia: 2
-                    }
+                    })
                 ]
-            },
-            {
-                nombre: 'Servidor IOS',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Cable principal',
-                        tipo: 'cable',
-                        jerarquia: 2,
+            })
+        ]),
+        element('Servidor IOS', 'servidor', [
+            comp('Cable HDMI', 'cable', {
+                cableTipo: 'hdmi',
+                hijos: [terminal('Monitor IOS', 'monitor')]
+            }),
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Extensor USB', 'extensor', {
                         hijos: [
-                            {
-                                nombre: 'Video',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'video'
-                            },
-                            {
-                                nombre: 'USB',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'usb'
-                            }
+                            terminal('Teclado USB', 'periferico'),
+                            terminal('Raton USB', 'periferico')
                         ]
-                    },
-                    {
-                        nombre: 'Extensor USB',
-                        tipo: 'extensor',
-                        jerarquia: 3,
-                        cableTipo: 'usb'
-                    },
-                    {
-                        nombre: 'Monitor IOS',
-                        tipo: 'monitor',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Joystick',
-                        tipo: 'control',
-                        jerarquia: 2
-                    }
+                    })
                 ]
-            }
-        ]
-    };
+            })
+        ])
+    ]);
 }
 
 function createJTACPuesto() {
-    return {
-        nombre: 'JTAC',
-        tipo: 'puesto',
-        jerarquia: 1,
-        elementos: [
-            {
-                nombre: 'Servidor Host',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Tablet Rover',
-                        tipo: 'tablet',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Router',
-                        tipo: 'red',
-                        jerarquia: 2
-                    }
+    return puesto('Puesto JTAC', [
+        element('Servidor Sensor', 'servidor', [
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Router Wi-Fi', 'router', {
+                        hijos: [terminal('Tablet Sensor', 'tablet')]
+                    })
                 ]
-            },
-            {
-                nombre: 'Servidor Radio',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Mini PC',
-                        tipo: 'computador',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Radio Maquetada',
-                        tipo: 'radio',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Cascos',
-                        tipo: 'audio',
-                        jerarquia: 3
-                    }
-                ]
-            },
-            {
-                nombre: 'Servidor Proyeccion',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Cable principal',
-                        tipo: 'cable',
-                        jerarquia: 2,
+            })
+        ]),
+        element('Servidor Radio', 'servidor', [
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Switch', 'switch', {
                         hijos: [
-                            {
-                                nombre: 'USB',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'usb'
-                            }
+                            comp('Mini PC', 'computador', {
+                                hijos: [
+                                    comp('Cable USB', 'cable', {
+                                        cableTipo: 'usb',
+                                        hijos: [
+                                            comp('Radio maquetada', 'radio', {
+                                                hijos: [terminal('Audifonos', 'audio')]
+                                            })
+                                        ]
+                                    })
+                                ]
+                            })
                         ]
-                    },
-                    {
-                        nombre: 'Extensor USB',
-                        tipo: 'extensor',
-                        jerarquia: 3,
-                        cableTipo: 'usb'
-                    },
-                    {
-                        nombre: 'DAGR',
-                        tipo: 'sensor',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Puntero',
-                        tipo: 'periferico',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Mando BT',
-                        tipo: 'control',
-                        jerarquia: 2
-                    }
+                    })
                 ]
-            },
-            {
-                nombre: 'Servidor LTD',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Cable principal',
-                        tipo: 'cable',
-                        jerarquia: 2,
+            })
+        ]),
+        element('Servidor JTAC Simulator', 'servidor', [
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Extensor USB', 'extensor', {
                         hijos: [
-                            {
-                                nombre: 'Video',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'video'
-                            },
-                            {
-                                nombre: 'USB',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'usb'
-                            }
+                            comp('Cable USB Puntero', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('Puntero', 'periferico')]
+                            }),
+                            comp('Cable USB DAGR', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('DAGR', 'sensor')]
+                            }),
+                            comp('Conexion Bluetooth', 'conexion', {
+                                hijos: [terminal('Mando BT', 'control')]
+                            })
                         ]
-                    },
-                    {
-                        nombre: 'Extensor USB',
-                        tipo: 'extensor',
-                        jerarquia: 3,
-                        cableTipo: 'usb'
-                    },
-                    {
-                        nombre: 'LTD',
-                        tipo: 'sensor',
-                        jerarquia: 2
-                    }
+                    })
                 ]
-            },
-            {
-                nombre: 'Servidor Moskito',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Cable principal',
-                        tipo: 'cable',
-                        jerarquia: 2,
+            })
+        ]),
+        element('Servidor LTD', 'servidor', [
+            comp('Cable HDMI Fibra', 'cable', {
+                cableTipo: 'hdmi_fibra',
+                hijos: [terminal('LTD - Video', 'sensor')]
+            }),
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Extensor USB', 'extensor', {
                         hijos: [
-                            {
-                                nombre: 'Video',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'video'
-                            },
-                            {
-                                nombre: 'USB',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'usb'
-                            }
+                            comp('Cable USB', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('LTD - Control', 'sensor')]
+                            })
                         ]
-                    },
-                    {
-                        nombre: 'Extensor USB',
-                        tipo: 'extensor',
-                        jerarquia: 3,
-                        cableTipo: 'usb'
-                    },
-                    {
-                        nombre: 'Moskito',
-                        tipo: 'sensor',
-                        jerarquia: 2
-                    }
+                    })
                 ]
-            },
-            {
-                nombre: 'Servidor Jim Compact',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Cable principal',
-                        tipo: 'cable',
-                        jerarquia: 2,
+            })
+        ]),
+        element('Servidor Moskito', 'servidor', [
+            comp('Cable HDMI Fibra', 'cable', {
+                cableTipo: 'hdmi_fibra',
+                hijos: [terminal('Moskito - Video', 'sensor')]
+            }),
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Extensor USB', 'extensor', {
                         hijos: [
-                            {
-                                nombre: 'Video',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'video'
-                            },
-                            {
-                                nombre: 'USB',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'usb'
-                            }
+                            comp('Cable USB', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('Moskito - Control', 'sensor')]
+                            })
                         ]
-                    },
-                    {
-                        nombre: 'Extensor USB',
-                        tipo: 'extensor',
-                        jerarquia: 3,
-                        cableTipo: 'usb'
-                    },
-                    {
-                        nombre: 'Jim Compact',
-                        tipo: 'sensor',
-                        jerarquia: 2
-                    }
+                    })
                 ]
-            }
-        ]
-    };
+            })
+        ]),
+        element('Servidor Jim Compact', 'servidor', [
+            comp('Cable HDMI Fibra', 'cable', {
+                cableTipo: 'hdmi_fibra',
+                hijos: [terminal('Jim compact - Video', 'sensor')]
+            }),
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Extensor USB', 'extensor', {
+                        hijos: [
+                            comp('Cable USB', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('Jim compact - Control', 'sensor')]
+                            })
+                        ]
+                    })
+                ]
+            })
+        ]),
+        element('Sistema de proyeccion', 'sistema', buildProjectionComponents())
+    ]);
 }
 
 function createPilotoPuesto() {
+    return puesto('Puesto Piloto', [
+        element('Servidor Radio', 'servidor', [
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Switch', 'switch', {
+                        hijos: [
+                            comp('Mini PC', 'computador', {
+                                hijos: [
+                                    comp('Cable USB', 'cable', {
+                                        cableTipo: 'usb',
+                                        hijos: [
+                                            comp('Radio maquetada', 'radio', {
+                                                hijos: [terminal('Audifonos', 'audio')]
+                                            })
+                                        ]
+                                    })
+                                ]
+                            })
+                        ]
+                    })
+                ]
+            })
+        ]),
+        element('Servidor VBS', 'servidor', [
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Extensor USB', 'extensor', {
+                        hijos: [
+                            comp('Cable USB Palanca', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('Palanca de gases', 'control')]
+                            }),
+                            comp('Cable USB Pedales', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('Pedales', 'control')]
+                            }),
+                            comp('Cable USB Joystick', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('Joystick HOTAS', 'control')]
+                            }),
+                            comp('Cable USB Instrumentacion', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('Monitor Instrumentacion Tactil (USB)', 'monitor')]
+                            })
+                        ]
+                    })
+                ]
+            }),
+            comp('Cable HDMI Fibra', 'cable', {
+                cableTipo: 'hdmi_fibra',
+                hijos: [terminal('Monitor VBS', 'monitor')]
+            }),
+            comp('Cable HDMI', 'cable', {
+                cableTipo: 'hdmi',
+                hijos: [terminal('Monitor Instrumentacion Tactil (HDMI)', 'monitor')]
+            })
+        ]),
+        element('Servidor IOS', 'servidor', [
+            comp('Cable de Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Extensor USB', 'extensor', {
+                        hijos: [
+                            comp('USB inalambrico', 'periferico', {
+                                hijos: [
+                                    terminal('Teclado con trackpad', 'periferico'),
+                                    terminal('Teclado numerico', 'periferico')
+                                ]
+                            })
+                        ]
+                    })
+                ]
+            }),
+            comp('Cable HDMI Fibra', 'cable', {
+                cableTipo: 'hdmi_fibra',
+                hijos: [terminal('Monitor IOS Tactil', 'monitor')]
+            })
+        ]),
+        element('Servidor Sensor', 'servidor', [
+            comp('Cable Red', 'cable', {
+                cableTipo: 'red',
+                hijos: [
+                    comp('Extensor USB', 'extensor', {
+                        hijos: [
+                            comp('Cable USB', 'cable', {
+                                cableTipo: 'usb',
+                                hijos: [terminal('Monitor Sensor Tactil (USB)', 'monitor')]
+                            })
+                        ]
+                    })
+                ]
+            }),
+            comp('Cable HDMI Fibra', 'cable', {
+                cableTipo: 'hdmi_fibra',
+                hijos: [terminal('Monitor Sensor Tactil (HDMI)', 'monitor')]
+            })
+        ])
+    ]);
+}
+
+function puesto(nombre, elementos, extra = {}) {
     return {
-        nombre: 'Piloto',
+        nombre,
         tipo: 'puesto',
         jerarquia: 1,
-        elementos: [
-            {
-                nombre: 'Servidor Radio',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Mini PC',
-                        tipo: 'computador',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Radio Maquetada',
-                        tipo: 'radio',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Cascos',
-                        tipo: 'audio',
-                        jerarquia: 3
-                    }
-                ]
-            },
-            {
-                nombre: 'Servidor VBS',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Palanca de Gases',
-                        tipo: 'control',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Pedales',
-                        tipo: 'control',
-                        jerarquia: 3
-                    },
-                    {
-                        nombre: 'Joystick HOTAS',
-                        tipo: 'control',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Cable principal',
-                        tipo: 'cable',
-                        jerarquia: 2,
-                        hijos: [
-                            {
-                                nombre: 'USB',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'usb'
-                            }
-                        ]
-                    },
-                    {
-                        nombre: 'Extensor USB',
-                        tipo: 'extensor',
-                        jerarquia: 3,
-                        cableTipo: 'usb'
-                    },
-                    {
-                        nombre: 'Monitor VBS + Instrumentacion',
-                        tipo: 'monitor',
-                        jerarquia: 2
-                    }
-                ]
-            },
-            {
-                nombre: 'Servidor IOS',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Cable principal',
-                        tipo: 'cable',
-                        jerarquia: 2,
-                        hijos: [
-                            {
-                                nombre: 'Video',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'video'
-                            },
-                            {
-                                nombre: 'USB',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'usb'
-                            }
-                        ]
-                    },
-                    {
-                        nombre: 'Extensor USB',
-                        tipo: 'extensor',
-                        jerarquia: 2,
-                        cableTipo: 'usb'
-                    },
-                    {
-                        nombre: 'Monitor IOS',
-                        tipo: 'monitor',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Teclado + Track pad',
-                        tipo: 'periferico',
-                        jerarquia: 2
-                    }
-                ]
-            },
-            {
-                nombre: 'Servidor Rover',
-                tipo: 'servidor',
-                jerarquia: 2,
-                componentes: [
-                    {
-                        nombre: 'Monitor VBS',
-                        tipo: 'monitor',
-                        jerarquia: 2
-                    },
-                    {
-                        nombre: 'Cable principal',
-                        tipo: 'cable',
-                        jerarquia: 2,
-                        hijos: [
-                            {
-                                nombre: 'Video',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'video'
-                            },
-                            {
-                                nombre: 'USB',
-                                tipo: 'cable',
-                                jerarquia: 3,
-                                cableTipo: 'usb'
-                            }
-                        ]
-                    },
-                    {
-                        nombre: 'Extensor USB',
-                        tipo: 'extensor',
-                        jerarquia: 3,
-                        cableTipo: 'usb'
-                    }
-                ]
-            }
-        ]
+        ...extra,
+        elementos
     };
 }
 
-function createProjectionPuesto() {
+function element(nombre, tipo, componentes = [], extra = {}) {
+    return {
+        nombre,
+        tipo,
+        jerarquia: 2,
+        ...extra,
+        componentes
+    };
+}
+
+function comp(nombre, tipo, options = {}) {
+    const {
+        hijos = [],
+        jerarquia = null,
+        cableTipo = null,
+        finFlujo = false,
+        nota = null
+    } = options;
+    const node = { nombre, tipo };
+    if (jerarquia != null) {
+        node.jerarquia = jerarquia;
+    }
+    if (cableTipo != null) {
+        node.cableTipo = cableTipo;
+    }
+    if (finFlujo) {
+        node.finFlujo = true;
+    }
+    if (nota) {
+        node.nota = nota;
+    }
+    if (hijos.length) {
+        node.hijos = hijos;
+    }
+    return node;
+}
+
+function terminal(nombre, tipo, options = {}) {
+    const { nota = FIN_FLOW_NOTE, ...rest } = options;
+    return comp(nombre, tipo, { ...rest, finFlujo: true, nota });
+}
+
+function buildProjectionComponents() {
     const servidores = Array.from({ length: 8 }).map((_, index) => {
         const numero = index + 1;
-        return {
-            nombre: `Servidor Proyeccion ${numero}`,
-            tipo: 'servidor',
-            jerarquia: 2,
-            componentes: [
-                {
-                    nombre: `Proyector ${numero}`,
-                    tipo: 'proyector',
-                    jerarquia: 2
-                }
+        return comp(`Servidor Proyeccion ${numero}`, 'servidor', {
+            hijos: [
+                comp('Cable DisplayPort fibra', 'cable', {
+                    cableTipo: 'displayport_fibra',
+                    hijos: [terminal(`Proyector ${numero}`, 'proyector')]
+                })
             ]
-        };
+        });
     });
 
-    return {
-        nombre: 'Sistema de proyeccion',
-        tipo: 'puesto',
-        jerarquia: 1,
-        elementos: servidores
-    };
+    servidores.push(
+        comp('Servidor Sincronismo', 'servidor', {
+            hijos: [
+                comp('Cable HDMI', 'cable', {
+                    cableTipo: 'hdmi',
+                    hijos: [
+                        comp('Convertidor HDMI-Audio', 'convertidor', {
+                            hijos: [
+                                comp('Amplificador', 'audio', {
+                                    hijos: [terminal('Altavoces sala', 'audio')]
+                                })
+                            ]
+                        })
+                    ]
+                })
+            ]
+        })
+    );
+
+    return servidores;
 }
 
 function loadStore() {
@@ -1288,6 +1327,11 @@ function normalizeStore(parsed) {
                 cableTipo:
                     item.cableTipo != null || item.cable_tipo != null
                         ? String(item.cableTipo ?? item.cable_tipo).trim() || null
+                        : null,
+                finFlujo: Boolean(item.finFlujo ?? item.fin_flujo ?? false),
+                nota:
+                    item.nota != null || item.note != null
+                        ? String(item.nota ?? item.note).trim() || null
                         : null
             }))
             .filter(
@@ -1324,7 +1368,20 @@ function normalizeStore(parsed) {
                         ? String(item.closedAt ?? item.closed_at).slice(0, 10)
                         : null),
                 impacto: normalizeImpact(item.impacto) || 'media',
-                naturaleza: normalizeNature(item.naturaleza)
+                naturaleza: normalizeNature(item.naturaleza),
+                recurrente:
+                    item.recurrente === true ||
+                    item.recurrente === 'true' ||
+                    item.recurrente === 1 ||
+                    item.recurrente === '1',
+                tiempoResolucion: (() => {
+                    const raw = item.tiempoResolucion ?? item.tiempo_resolucion;
+                    if (raw == null || raw === '') {
+                        return null;
+                    }
+                    const numeric = Number(raw);
+                    return Number.isNaN(numeric) ? null : numeric;
+                })()
             }))
             .filter(
                 item =>
@@ -1384,14 +1441,16 @@ function canUseLocalStorage() {
     }
 }
 
-function getOrCreateDomo(nombre) {
+function getOrCreateDomo(nombre, metadata = null) {
     const clean = cleanName(nombre);
     let record = store.domos.find(item => sameName(item.nombre, clean));
     if (record) {
+        applyMetadata(record, metadata);
         return record.id;
     }
     const id = generateId('domos');
     record = { id, nombre: clean };
+    applyMetadata(record, metadata);
     store.domos.push(record);
     return id;
 }
@@ -1524,6 +1583,15 @@ function mapIncident(record) {
             : componente.nombre
         : null;
 
+    const ruta = [
+        domo?.nombre ?? null,
+        puesto?.nombre ?? null,
+        elemento?.nombre ?? null,
+        componentePath
+    ]
+        .filter(Boolean)
+        .join(' / ');
+
     const activo = componente ?? elemento ?? null;
     const diasAbierta = (() => {
         if (!record.fecha) {
@@ -1560,13 +1628,19 @@ function mapIncident(record) {
             : { id: record.elementoId, nombre: 'No definido' },
         componenteId: record.componenteId ?? null,
         componente: componentePath,
+        ruta,
         activo: activo
             ? {
                   tipo: activo.tipo ?? null,
                   jerarquia: activo.jerarquia ?? null,
-                  cableTipo: activo.cableTipo ?? null
+                  cableTipo: activo.cableTipo ?? null,
+                  finFlujo: Boolean(activo.finFlujo),
+                  nota: activo.nota ?? null
               }
-            : null
+            : null,
+        tiempoResolucion: record.tiempoResolucion ?? null,
+        recurrente: Boolean(record.recurrente),
+        relacionadas: getRelatedIncidents(record)
     };
 }
 
@@ -1611,6 +1685,12 @@ function applyMetadata(record, metadata) {
     if (!Object.prototype.hasOwnProperty.call(record, 'cableTipo')) {
         record.cableTipo = null;
     }
+    if (!Object.prototype.hasOwnProperty.call(record, 'finFlujo')) {
+        record.finFlujo = false;
+    }
+    if (!Object.prototype.hasOwnProperty.call(record, 'nota')) {
+        record.nota = null;
+    }
 
     if (!metadata || typeof metadata !== 'object') {
         return;
@@ -1625,6 +1705,12 @@ function applyMetadata(record, metadata) {
     }
     if (metadata.cableTipo !== undefined) {
         record.cableTipo = metadata.cableTipo ?? null;
+    }
+    if (metadata.finFlujo !== undefined) {
+        record.finFlujo = Boolean(metadata.finFlujo);
+    }
+    if (metadata.nota !== undefined) {
+        record.nota = metadata.nota ?? null;
     }
 }
 
@@ -1741,6 +1827,74 @@ function getImpactLabel(id) {
 function getNatureLabel(id) {
     const match = NATURE_OPTIONS.find(item => item.id === id);
     return match ? match.label : 'Sin definir';
+}
+
+function daysBetweenDates(a, b) {
+    const first = parseDateValue(a);
+    const second = parseDateValue(b);
+    if (!first || !second) {
+        return null;
+    }
+    const diff = Math.abs(second.getTime() - first.getTime());
+    return Math.floor(diff / 86400000);
+}
+
+function getRecurrenceKey(record) {
+    if (!record) {
+        return null;
+    }
+    const puestoId = Number(record.puestoId ?? record.puesto?.id);
+    const elementoId = Number(record.elementoId ?? record.elemento?.id);
+    if (Number.isNaN(puestoId) || Number.isNaN(elementoId)) {
+        return null;
+    }
+    const componenteId =
+        record.componenteId != null ? Number(record.componenteId) : null;
+    const componentKey =
+        componenteId != null && !Number.isNaN(componenteId)
+            ? `C${componenteId}`
+            : `E${elementoId}`;
+    return `${puestoId}|${componentKey}`;
+}
+
+function recalcRecurrenceForKey(key) {
+    if (!key) {
+        return;
+    }
+    const incidents = store.incidentes.filter(item => getRecurrenceKey(item) === key);
+    if (!incidents.length) {
+        return;
+    }
+    incidents.forEach(item => {
+        const window30 = incidents.filter(other => {
+            const diff = daysBetweenDates(item.fecha, other.fecha);
+            return diff != null && diff <= 30;
+        });
+        const window7 = incidents.filter(other => {
+            const diff = daysBetweenDates(item.fecha, other.fecha);
+            return diff != null && diff <= 7;
+        });
+        item.recurrente = window30.length >= 3 || window7.length >= 2;
+    });
+}
+
+function getRelatedIncidents(record) {
+    const key = getRecurrenceKey(record);
+    if (!key) {
+        return [];
+    }
+    return store.incidentes
+        .filter(item => item.id !== record.id && getRecurrenceKey(item) === key)
+        .filter(item => {
+            const diff = daysBetweenDates(record.fecha, item.fecha);
+            return diff != null && diff <= 30;
+        })
+        .sort((a, b) => {
+            const dateA = parseDateValue(a.fecha) ?? new Date(0);
+            const dateB = parseDateValue(b.fecha) ?? new Date(0);
+            return dateB.getTime() - dateA.getTime();
+        })
+        .map(item => item.id);
 }
 
 function normalizeStatus(value) {
