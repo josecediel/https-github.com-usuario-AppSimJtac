@@ -13,13 +13,16 @@
             <p>Entrena como combates</p>
         </header>
         <!-- Contenedores para las vistas -->
-        <section class="main-buttons" id="mainButtons"></section>
-        <section id="submenuContainer"></section>
-        <section class="content-area" id="contentArea">
-            <button class="back-button" id="backButton">← Volver</button>
-            <h2 class="content-header" id="contentHeader"></h2>
-            <div class="content-body" id="contentBody"></div>
-        </section>
+        <nav class="main-buttons" id="mainButtons" aria-label="Menú principal"></nav>
+        <main id="mainContent">
+            <section id="submenuContainer"></section>
+            <section class="content-area" id="contentArea" aria-live="polite" aria-labelledby="contentHeader">
+                <button class="back-button" id="backButton" type="button" aria-label="Volver al menú anterior">← Volver</button>
+                <h2 class="content-header" id="contentHeader" tabindex="-1"></h2>
+                <div class="content-body" id="contentBody"></div>
+            </section>
+        </main>
+        <footer class="footer" aria-label="Pie de página"></footer>
     </div>
     <script type="module" src="js/app.js"></script>
 </body>

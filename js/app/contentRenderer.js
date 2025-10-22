@@ -20,7 +20,9 @@ export class ContentRenderer {
         const storageKey = this.generateStorageKey();
 
         if (!optionData) {
+            contentHeader.textContent = 'Detalle';
             contentBody.innerHTML = '<p>Contenido no disponible.</p>';
+            this.focusHeader();
             return;
         }
 
@@ -35,6 +37,7 @@ export class ContentRenderer {
                 state: this.state,
                 storageKey
             });
+            this.focusHeader();
             return;
         }
 
@@ -54,6 +57,8 @@ export class ContentRenderer {
             default:
                 contentBody.innerHTML = '<p>Tipo de contenido no soportado.</p>';
         }
+
+        this.focusHeader();
     }
 
     renderText(optionData, storageKey) {
@@ -165,5 +170,21 @@ export class ContentRenderer {
         const tmp = document.createElement('div');
         tmp.innerHTML = content;
         return tmp.textContent || tmp.innerText || '';
+    }
+
+    focusHeader() {
+        const { contentHeader } = this.elements;
+
+        if (!contentHeader) {
+            return;
+        }
+
+        if (!contentHeader.hasAttribute('tabindex')) {
+            contentHeader.setAttribute('tabindex', '-1');
+        }
+
+        requestAnimationFrame(() => {
+            contentHeader.focus();
+        });
     }
 }

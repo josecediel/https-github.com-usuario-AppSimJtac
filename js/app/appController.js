@@ -20,11 +20,22 @@ export class AppController {
         this.state = new AppState();
         this.elements = getDomElements();
         this.contentRenderer = new ContentRenderer(this.elements, this.state, customRenderers);
+        this.slugIndex = this.buildSlugIndex();
+        this.isUpdatingHash = false;
+        this.onHashChange = () => {
+            if (this.isUpdatingHash) {
+                this.isUpdatingHash = false;
+                return;
+            }
+            this.navigateFromHash();
+        };
+        window.addEventListener('hashchange', this.onHashChange);
     }
 
     init() {
         this.attachEventListeners();
         this.renderMainButtons();
+        this.navigateFromHash();
     }
 
     attachEventListeners() {
@@ -45,7 +56,7 @@ export class AppController {
         });
     }
 
-    renderMainButtonSubmenu(buttonId) {
+    renderMainButtonSubmenu(buttonId, optionPath = []) {
         const buttonData = this.config[buttonId];
 
         if (!buttonData) {
@@ -59,7 +70,8 @@ export class AppController {
         this.renderSubmenu({
             title: buttonData.title,
             entries: buttonData.submenu || {},
-            parentButtonId: buttonId
+            parentButtonId: buttonId,
+            optionPath
         });
     }
 
@@ -79,23 +91,39 @@ export class AppController {
         return button;
     }
 
-    handleMainButtonClick(buttonId) {
+    openMainButton(buttonId, options = {}) {
+        const { skipHashUpdate = false } = options;
         this.state.openMainButton(buttonId);
         this.renderMainButtonSubmenu(buttonId);
+        if (!skipHashUpdate) {
+            this.updateHashFromState();
+        }
     }
 
-    createSubmenuOption(buttonId, optionId, optionData) {
-        const option = document.createElement('div');
+    handleMainButtonClick(buttonId) {
+        this.openMainButton(buttonId);
+    }
+
+    createSubmenuOption(buttonId, optionId, optionData, optionPath = []) {
+        const option = document.createElement('button');
+        option.type = 'button';
         option.className = 'submenu-option';
         option.textContent = optionData.title;
-        option.addEventListener('click', () => this.handleSubmenuClick(buttonId, optionId, optionData));
+        const fullPath = [...optionPath, optionId];
+        option.dataset.optionPath = JSON.stringify(fullPath);
+        option.addEventListener('click', () => this.handleSubmenuClick(buttonId, optionId, optionData, fullPath));
         return option;
     }
 
-    handleSubmenuClick(buttonId, optionId, optionData) {
+    handleSubmenuClick(buttonId, optionId, optionData, optionPath = [], options = {}) {
+        const { skipHashUpdate = false } = options;
+
         if (optionData.type === 'incident') {
             this.state.openContent(buttonId, optionId);
             this.incidentUI.showHome();
+            if (!skipHashUpdate) {
+                this.setHashForPath(buttonId, optionPath);
+            }
             return;
         }
 
@@ -104,13 +132,20 @@ export class AppController {
             this.renderSubmenu({
                 title: optionData.title,
                 entries: optionData.submenu,
-                parentButtonId: buttonId
+                parentButtonId: buttonId,
+                optionPath
             });
+            if (!skipHashUpdate) {
+                this.setHashForPath(buttonId, optionPath);
+            }
             return;
         }
 
         this.state.openContent(buttonId, optionId);
         this.showContentDirect(optionData);
+        if (!skipHashUpdate) {
+            this.setHashForPath(buttonId, optionPath);
+        }
     }
 
     showContentDirect(optionData) {
@@ -119,7 +154,7 @@ export class AppController {
         this.contentRenderer.render(optionData);
     }
 
-    renderSubmenu({ title, entries, parentButtonId }) {
+    renderSubmenu({ title, entries, parentButtonId, optionPath = [] }) {
         const container = this.elements.submenuContainer;
 
         if (!entries || Object.keys(entries).length === 0) {
@@ -135,7 +170,9 @@ export class AppController {
 
         const backButton = document.createElement('button');
         backButton.className = 'back-button';
+        backButton.type = 'button';
         backButton.textContent = '← Volver';
+        backButton.setAttribute('aria-label', 'Volver al menú anterior');
         backButton.addEventListener('click', () => this.goBack());
 
         const titleElement = document.createElement('h2');
@@ -146,7 +183,7 @@ export class AppController {
         optionsContainer.className = 'submenu-options';
 
         Object.entries(entries).forEach(([optionId, optionData]) => {
-            const option = this.createSubmenuOption(parentButtonId, optionId, optionData);
+            const option = this.createSubmenuOption(parentButtonId, optionId, optionData, optionPath);
             optionsContainer.appendChild(option);
         });
 
@@ -182,7 +219,10 @@ export class AppController {
                 break;
             default:
                 this.reset();
+                return;
         }
+
+        this.updateHashFromState();
     }
 
     showMainSubmenu(buttonId) {
@@ -190,7 +230,7 @@ export class AppController {
             this.reset();
             return;
         }
-        this.renderMainButtonSubmenu(buttonId);
+        this.openMainButton(buttonId, { skipHashUpdate: true });
     }
 
     showSubmenuFromOption(buttonId, optionId) {
@@ -201,26 +241,28 @@ export class AppController {
             return;
         }
 
-        const optionConfig = buttonConfig.submenu[optionId];
+        const optionPath = this.getCurrentOptionPath();
+        const optionConfig = this.getOptionDataFromPath(buttonId, optionPath);
 
         if (!optionConfig || optionConfig.type !== 'submenu') {
-            this.handleMainButtonClick(buttonId);
+            this.openMainButton(buttonId, { skipHashUpdate: true });
             return;
         }
 
         this.renderSubmenu({
             title: optionConfig.title,
             entries: optionConfig.submenu,
-            parentButtonId: buttonId
+            parentButtonId: buttonId,
+            optionPath
         });
     }
 
     showContentFromIds(buttonId, optionId) {
-        const buttonConfig = this.config[buttonId];
-        const optionConfig = buttonConfig?.submenu?.[optionId];
+        const optionPath = this.getCurrentOptionPath();
+        const optionConfig = this.getOptionDataFromPath(buttonId, optionPath);
 
         if (!optionConfig) {
-            this.reset();
+            this.reset({ skipHashUpdate: true });
             return;
         }
 
@@ -232,12 +274,16 @@ export class AppController {
         this.showContentDirect(optionConfig);
     }
 
-    reset() {
+    reset(options = {}) {
+        const { skipHashUpdate = false } = options;
         this.state.reset();
         this.hideContentArea();
         this.hideSubmenu();
         this.showMainButtons();
         this.updateActiveButton(null);
+        if (!skipHashUpdate) {
+            this.setHashForPath(null, []);
+        }
     }
 
     updateActiveButton(activeId) {
@@ -271,6 +317,281 @@ export class AppController {
         this.elements.submenuContainer.innerHTML = '';
         this.elements.submenuContainer.style.display = 'none';
         this.elements.submenuContainer.classList.remove('active');
+    }
+
+    updateHashFromState() {
+        const buttonId = this.state.currentButton;
+        if (!buttonId) {
+            this.setHashForPath(null, []);
+            return;
+        }
+
+        const optionPath = this.getCurrentOptionPath();
+        this.setHashForPath(buttonId, optionPath);
+    }
+
+    getCurrentOptionPath() {
+        return this.state.history
+            .filter(entry => entry.type !== 'main')
+            .map(entry => entry.optionId)
+            .filter(Boolean);
+    }
+
+    getOptionDataFromPath(buttonId, optionPath = []) {
+        if (!buttonId || !Array.isArray(optionPath)) {
+            return null;
+        }
+
+        let entries = this.config[buttonId]?.submenu;
+        let optionData = null;
+
+        for (const optionId of optionPath) {
+            optionData = entries?.[optionId];
+            if (!optionData) {
+                return null;
+            }
+            entries = optionData.submenu;
+        }
+
+        return optionData;
+    }
+
+    setHashForPath(buttonId, optionPath = []) {
+        const newHash = this.buildHashPath(buttonId, optionPath);
+        const currentHash = window.location.hash || '';
+
+        if (currentHash === newHash) {
+            return;
+        }
+
+        this.isUpdatingHash = true;
+        window.location.hash = newHash;
+    }
+
+    buildHashPath(buttonId, optionPath = []) {
+        if (!buttonId) {
+            return '#/';
+        }
+
+        const buttonData = this.config[buttonId];
+        if (!buttonData) {
+            return '#/';
+        }
+
+        const slugs = [];
+        const buttonSlug =
+            this.slugIndex.buttonSlugById.get(buttonId) ||
+            this.slugify(buttonData.title || buttonId);
+        slugs.push(buttonSlug);
+
+        const optionSlugByPath = this.slugIndex.optionSlugByPath;
+
+        let traversedPath = [];
+        optionPath.forEach(optionId => {
+            traversedPath = [...traversedPath, optionId];
+            const slugKey = this.buildOptionSlugKey(buttonId, traversedPath);
+            const storedSlug = optionSlugByPath.get(slugKey);
+
+            if (storedSlug) {
+                slugs.push(storedSlug);
+            } else {
+                const optionData = this.getOptionDataFromPath(buttonId, traversedPath);
+                if (optionData) {
+                    slugs.push(this.slugify(optionData.title || optionId));
+                }
+            }
+        });
+
+        return `#/${slugs.join('/')}`;
+    }
+
+    getHashSegments() {
+        const rawHash = window.location.hash || '';
+        const cleaned = rawHash.replace(/^#\/?/, '').trim();
+
+        if (!cleaned) {
+            return [];
+        }
+
+        return cleaned
+            .split('/')
+            .map(segment => decodeURIComponent(segment).toLowerCase())
+            .filter(Boolean);
+    }
+
+    navigateFromHash() {
+        const segments = this.getHashSegments();
+
+        if (segments.length === 0) {
+            const shouldSkipUpdate = !window.location.hash || window.location.hash === '#/' || window.location.hash === '#';
+            this.reset({ skipHashUpdate: shouldSkipUpdate });
+            return;
+        }
+
+        const [buttonSlug, ...rest] = segments;
+        const buttonId = this.slugIndex.buttonIdBySlug.get(buttonSlug);
+
+        if (!buttonId) {
+            this.reset();
+            return;
+        }
+
+        this.openMainButton(buttonId, { skipHashUpdate: true });
+
+        if (rest.length === 0) {
+            this.setHashForPath(buttonId, []);
+            return;
+        }
+
+        const pathKey = [buttonSlug, ...rest].join('/');
+        const entry = this.slugIndex.pathIndex.get(pathKey);
+
+        if (!entry) {
+            return;
+        }
+
+        this.followOptionChain(buttonId, entry.optionChain, { skipHashUpdate: true });
+        this.setHashForPath(buttonId, entry.optionChain);
+    }
+
+    followOptionChain(buttonId, optionChain, options = {}) {
+        const { skipHashUpdate = false } = options;
+
+        if (!Array.isArray(optionChain) || optionChain.length === 0) {
+            if (!skipHashUpdate) {
+                this.setHashForPath(buttonId, []);
+            }
+            return;
+        }
+
+        let entries = this.config[buttonId]?.submenu;
+        let processedPath = [];
+
+        for (let index = 0; index < optionChain.length; index += 1) {
+            const optionId = optionChain[index];
+            const optionData = entries?.[optionId];
+
+            if (!optionData) {
+                break;
+            }
+
+            const currentPath = optionChain.slice(0, index + 1);
+            processedPath = currentPath;
+
+            if (optionData.type === 'submenu' && optionData.submenu) {
+                this.state.enterSubmenu(buttonId, optionId);
+                this.renderSubmenu({
+                    title: optionData.title,
+                    entries: optionData.submenu,
+                    parentButtonId: buttonId,
+                    optionPath: currentPath
+                });
+                entries = optionData.submenu;
+                continue;
+            }
+
+            if (optionData.type === 'incident') {
+                this.state.openContent(buttonId, optionId);
+                this.incidentUI.showHome();
+            } else {
+                this.state.openContent(buttonId, optionId);
+                this.showContentDirect(optionData);
+            }
+
+            entries = optionData.submenu;
+            break;
+        }
+
+        if (!skipHashUpdate) {
+            this.setHashForPath(buttonId, processedPath);
+        }
+    }
+
+    slugify(value) {
+        return String(value || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'item';
+    }
+
+    buildSlugIndex() {
+        const buttonSlugById = new Map();
+        const buttonIdBySlug = new Map();
+        const optionSlugByPath = new Map();
+        const pathIndex = new Map();
+        const usedButtonSlugs = new Set();
+
+        Object.entries(this.config).forEach(([buttonId, buttonData]) => {
+            const baseSlug = this.slugify(buttonData.title || buttonId);
+            const buttonSlug = this.ensureUniqueSlug(baseSlug, usedButtonSlugs);
+            usedButtonSlugs.add(buttonSlug);
+            buttonSlugById.set(buttonId, buttonSlug);
+            buttonIdBySlug.set(buttonSlug, buttonId);
+
+            this.indexOptionPaths({
+                buttonId,
+                buttonSlug,
+                entries: buttonData.submenu || {},
+                optionIdChain: [],
+                slugChain: [],
+                pathIndex,
+                optionSlugMap: optionSlugByPath
+            });
+        });
+
+        return { buttonSlugById, buttonIdBySlug, optionSlugByPath, pathIndex };
+    }
+
+    indexOptionPaths({ buttonId, buttonSlug, entries, optionIdChain, slugChain, pathIndex, optionSlugMap }) {
+        const usedSlugs = new Set();
+
+        Object.entries(entries).forEach(([optionId, optionData]) => {
+            const baseSlug = this.slugify(optionData.title || optionId);
+            const optionSlug = this.ensureUniqueSlug(baseSlug, usedSlugs);
+            usedSlugs.add(optionSlug);
+            const nextIdChain = [...optionIdChain, optionId];
+            const nextSlugChain = [...slugChain, optionSlug];
+            const pathKey = [buttonSlug, ...nextSlugChain].join('/');
+            const slugKey = this.buildOptionSlugKey(buttonId, nextIdChain);
+
+            optionSlugMap.set(slugKey, optionSlug);
+
+            pathIndex.set(pathKey, {
+                buttonId,
+                optionChain: nextIdChain
+            });
+
+            if (optionData.type === 'submenu' && optionData.submenu) {
+                this.indexOptionPaths({
+                    buttonId,
+                    buttonSlug,
+                    entries: optionData.submenu,
+                    optionIdChain: nextIdChain,
+                    slugChain: nextSlugChain,
+                    pathIndex,
+                    optionSlugMap
+                });
+            }
+        });
+    }
+
+    buildOptionSlugKey(buttonId, optionChain) {
+        return `${buttonId}|${optionChain.join('.')}`;
+    }
+
+    ensureUniqueSlug(baseSlug, usedSlugs) {
+        const sanitizedBase = baseSlug || 'item';
+        let slug = sanitizedBase;
+        let counter = 2;
+
+        while (usedSlugs.has(slug)) {
+            slug = `${sanitizedBase}-${counter}`;
+            counter += 1;
+        }
+
+        return slug;
     }
 
     getDebugInfo() {

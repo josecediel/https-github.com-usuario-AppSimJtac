@@ -81,10 +81,10 @@ body {
 }
 
 .main-button:hover {
-    transform: translateY(-5px);
-    box-shadow: var(--shadow-md);
     background: var(--primary-color);
     color: var(--text-light);
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-md);
 }
 
 .main-button.active {
@@ -149,14 +149,21 @@ body {
     text-align: center;
     font-weight: 500;
     font-size: 1em;
+    display: block;
+    color: inherit;
+    appearance: none;
+    -webkit-appearance: none;
 }
 
-.submenu-option:hover {
+.submenu-option:hover,
+.submenu-option:focus-visible {
     background: var(--primary-color);
     color: var(--text-light);
     border-color: var(--primary-color);
     transform: scale(1.05);
     box-shadow: var(--shadow-sm);
+    outline: 3px solid var(--text-light);
+    outline-offset: 2px;
 }
 
 /* ==========================================
@@ -242,8 +249,8 @@ body {
 .content-body img {
     max-width: 100%;
     height: auto;
-    border-radius: 8px;
     margin: 20px 0;
+    border-radius: 8px;
     box-shadow: var(--shadow-sm);
 }
 

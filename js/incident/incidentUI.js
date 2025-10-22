@@ -232,13 +232,13 @@ export class IncidentUI {
             entries.push(`<span class="filter-pill">Naturaleza: ${escapeHtml(this.getNatureLabel(this.filters.naturaleza))}</span>`);
         }
         if (this.filters.recurrente && this.filters.recurrente !== 'all') {
-            entries.push(`<span class="filter-pill">Recurrente: ${this.filters.recurrente === 'yes' ? 'Si' : 'No'}</span>`);
+            entries.push(`<span class="filter-pill">Recurrente: ${this.filters.recurrente === 'yes' ? 'Sí' : 'No'}</span>`);
         }
         if (this.filters.range && this.filters.range !== 'all') {
             const rangeLabels = {
-                '7d': 'Ultimos 7 dias',
-                '30d': 'Ultimos 30 dias',
-                '90d': 'Ultimos 90 dias'
+                '7d': 'Últimos 7 días',
+                '30d': 'Últimos 30 días',
+                '90d': 'Últimos 90 días'
             };
             const label = rangeLabels[this.filters.range] || this.filters.range;
             entries.push(`<span class="filter-pill">Rango: ${escapeHtml(label)}</span>`);
@@ -259,7 +259,7 @@ export class IncidentUI {
             }
         }
         if (this.filters.search) {
-            entries.push(`<span class="filter-pill">Busqueda: ${escapeHtml(this.filters.search)}</span>`);
+            entries.push(`<span class="filter-pill">Búsqueda: ${escapeHtml(this.filters.search)}</span>`);
         }
         return entries.length ? entries.join('') : '<span class="filter-pill muted">Sin filtros activos</span>';
     }
@@ -267,7 +267,7 @@ export class IncidentUI {
     showRelatedIncidents(incidentId) {
         const incident = this.system.getIncident(incidentId);
         if (!incident) {
-            alert('No se encontro la incidencia seleccionada.');
+            alert('No se encontró la incidencia seleccionada.');
             return;
         }
 
@@ -454,10 +454,10 @@ export class IncidentUI {
         const rangeChips = this.buildChipGroup(
             'range',
             [
-                { value: 'all', label: 'Todo el historico' },
-                { value: '7d', label: 'Ultimos 7 dias' },
-                { value: '30d', label: 'Ultimos 30 dias' },
-                { value: '90d', label: 'Ultimos 90 dias' }
+                { value: 'all', label: 'Todo el histórico' },
+                { value: '7d', label: 'Últimos 7 días' },
+                { value: '30d', label: 'Últimos 30 días' },
+                { value: '90d', label: 'Últimos 90 días' }
             ],
             filterState.range || 'all'
         );
@@ -533,7 +533,7 @@ export class IncidentUI {
                 <div class="incident-filters secondary">
                     <div class="filter-field filter-search">
                         <label for="filterSearch">Buscar</label>
-                        <input id="filterSearch" type="search" class="filter-input" placeholder="Descripcion, domo, elemento..." value="${escapeHtml(filterState.search || '')}">
+                        <input id="filterSearch" type="search" class="filter-input" placeholder="Descripción, domo, elemento..." value="${escapeHtml(filterState.search || '')}">
                     </div>
                     <div class="filter-actions">
                         <button id="clearFiltersButton" class="incident-btn ghost">Limpiar filtros</button>
@@ -559,11 +559,11 @@ export class IncidentUI {
                                 <th data-sort="componente" ${sortColumn === 'componente' ? `data-active="${sortDir}"` : ''}>Terminal / Ruta</th>
                                 <th data-sort="impacto" ${sortColumn === 'impacto' ? `data-active="${sortDir}"` : ''}>Impacto</th>
                                 <th data-sort="naturaleza" ${sortColumn === 'naturaleza' ? `data-active="${sortDir}"` : ''}>Naturaleza</th>
-                                <th data-sort="dias" ${sortColumn === 'dias' ? `data-active="${sortDir}"` : ''}>Edad (dias)</th>
+                                <th data-sort="dias" ${sortColumn === 'dias' ? `data-active="${sortDir}"` : ''}>Edad (días)</th>
                                 <th data-sort="recurrente" ${sortColumn === 'recurrente' ? `data-active="${sortDir}"` : ''}>Recurrente</th>
-                                <th data-sort="tiempoResolucion" ${sortColumn === 'tiempoResolucion' ? `data-active="${sortDir}"` : ''}>Tiempo resolucion</th>
-                                <th>Descripcion</th>
-                                <th>Resolucion</th>
+                                <th data-sort="tiempoResolucion" ${sortColumn === 'tiempoResolucion' ? `data-active="${sortDir}"` : ''}>Tiempo de resolución</th>
+                                <th>Descripción</th>
+                                <th>Resolución</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -755,26 +755,26 @@ export class IncidentUI {
 
         const agingMarkup = `
             <ul class="aging-list">
-                <li><strong>≤7 dias:</strong> ${aging.le7 ?? 0}</li>
-                <li><strong>8-30 dias:</strong> ${aging.between8And30 ?? 0}</li>
-                <li><strong>&gt;30 dias:</strong> ${aging.gt30 ?? 0}</li>
+                <li><strong>≤7 días:</strong> ${aging.le7 ?? 0}</li>
+                <li><strong>8-30 días:</strong> ${aging.between8And30 ?? 0}</li>
+                <li><strong>&gt;30 días:</strong> ${aging.gt30 ?? 0}</li>
             </ul>
         `;
 
         const mttrMarkup = mttrGeneral != null
-            ? `<p class="mttr-value">MTTR general: <strong>${mttrGeneral} dia(s)</strong></p>`
+            ? `<p class="mttr-value">MTTR general: <strong>${mttrGeneral} día(s)</strong></p>`
             : '<p class="chart-empty">Sin cierres suficientes</p>';
 
         const mttrDetalle = mttrNaturaleza.length
             ? `<ul class="analytics-list">${mttrNaturaleza
-                  .map(item => `<li>${escapeHtml(item.label)}: ${item.promedio} dia(s) (${item.total})</li>`)
+                  .map(item => `<li>${escapeHtml(item.label)}: ${item.promedio} día(s) (${item.total})</li>`)
                   .join('')}</ul>`
             : '<p class="chart-empty">Sin datos por naturaleza</p>';
 
         return `
             <div class="incident-analytics">
                 <div class="analytics-card wide">
-                    <h3>Abiertas vs cerradas (ultimos 30 dias)</h3>
+                    <h3>Abiertas vs cerradas (Últimos 30 días)</h3>
                     ${trendMarkup}
                 </div>
                 <div class="analytics-card">
@@ -798,18 +798,18 @@ export class IncidentUI {
                     ${this.renderBarList(nature, 'label', 'total')}
                 </div>
                 <div class="analytics-card">
-                    <h3>Elementos con mas incidencias</h3>
+                    <h3>Elementos con más incidencias</h3>
                     ${this.renderTopList(topElementos, item => `${item.elemento} - ${item.total}`)}
                 </div>
                 <div class="analytics-card">
-                    <h3>Componentes mas afectados</h3>
+                    <h3>Componentes más afectados</h3>
                     ${this.renderTopList(topComponentes, item => `${item.componente} - ${item.total}`)}
                 </div>
                 <div class="analytics-card">
-                    <h3>Promedio cierre por elemento</h3>
+                    <h3>Promedio de cierre por elemento</h3>
                     ${this.renderTopList(
                         tiemposElementos.slice(0, 5),
-                        item => `${item.elemento} - ${item.promedio} dias (${item.total})`
+                        item => `${item.elemento} - ${item.promedio} días (${item.total})`
                     )}
                 </div>
                 <div class="analytics-card">
@@ -882,7 +882,7 @@ export class IncidentUI {
                         return `
                             <li>
                                 <span class="open-id">#${item.id}</span>
-                                <span class="open-days">${item.dias} dias</span>
+                                <span class="open-days">${item.dias} días</span>
                                 <span class="open-impacto">${impactoLabel}</span>
                                 <span class="open-status">${escapeHtml(statusLabel)}</span>
                                 <span class="open-path">${escapeHtml(item.domo)} / ${escapeHtml(item.puesto)} / ${escapeHtml(item.elemento)}</span>
@@ -938,7 +938,7 @@ export class IncidentUI {
             ? `<span class="tag tag-recurrente" title="Incidencia recurrente">Recurrente</span>`
             : '<span class="tag tag-normal">No</span>';
         const tiempoResolucion =
-            incident.tiempoResolucion != null ? `${incident.tiempoResolucion} dia(s)` : '-';
+            incident.tiempoResolucion != null ? `${incident.tiempoResolucion} día(s)` : '-';
         const relacionadas =
             Array.isArray(incident.relacionadas) && incident.relacionadas.length
                 ? ` data-relacionadas="${incident.relacionadas.join(',')}"`
@@ -1149,7 +1149,7 @@ export class IncidentUI {
                     </div>
                 </div>
                 <div class="inventory-summary">
-                    <strong>Seleccion actual:</strong>
+                    <strong>Selección actual:</strong>
                     ${this.renderInventorySelectionSummary(selectedElemento, componentSelected, componentes)}
                 </div>
                 <div class="step-actions">
@@ -1281,7 +1281,7 @@ export class IncidentUI {
         return `
             <div class="step-panel">
                 <div class="summary-block">
-                    <h4>Resumen de la seleccion</h4>
+                    <h4>Resumen de la selección</h4>
                     <ul>
                         <li><strong>Fecha:</strong> ${formatDateTime(resumen.fecha)}</li>
                         <li><strong>Domo:</strong> ${escapeHtml(resumen.domo)}</li>
@@ -1292,7 +1292,7 @@ export class IncidentUI {
                 </div>
                 <div class="form-block">
                     <div class="form-row">
-                        <label for="descripcionTextarea">Descripcion del problema *</label>
+                        <label for="descripcionTextarea">Descripción del problema *</label>
                         <textarea id="descripcionTextarea" class="step-textarea" rows="4" required>${descripcion}</textarea>
                     </div>
                     <div class="form-row">
@@ -1403,7 +1403,7 @@ export class IncidentUI {
         const descripcionEl = document.getElementById('descripcionTextarea');
 
         if (!descripcionEl) {
-            alert('No se encontro el campo de descripcion.');
+            alert('No se encontró el campo de descripción.');
             return;
         }
 
@@ -1488,7 +1488,7 @@ export class IncidentUI {
     openCloseIncidentModal(id) {
         const incident = this.system.getIncident(id);
         if (!incident) {
-            alert('No se encontro la incidencia seleccionada.');
+            alert('No se encontró la incidencia seleccionada.');
             return;
         }
         const componentes = this.system.listComponentes(incident.elemento.id);
@@ -1548,11 +1548,11 @@ export class IncidentUI {
             ? [
                   { index: 1, label: 'Fecha de cierre' },
                   { index: 2, label: 'Sub elemento organico' },
-                  { index: 3, label: 'Naturaleza y solucion' }
+                  { index: 3, label: 'Naturaleza y solución' }
               ]
             : [
                   { index: 1, label: 'Fecha de cierre' },
-                  { index: 2, label: 'Naturaleza y solucion' }
+                  { index: 2, label: 'Naturaleza y solución' }
               ];
 
         const stepsHtml = `
@@ -1572,7 +1572,7 @@ export class IncidentUI {
         if (step === 1) {
             body = `
                 <label class="modal-field">
-                    <span>Fecha cierre</span>
+                    <span>Fecha de cierre</span>
                     <input type="date" name="fechaCierre" value="${data.fechaCierre}" required>
                 </label>
             `;
@@ -1598,7 +1598,7 @@ export class IncidentUI {
                     <div class="chip-group" data-close-nature>${natureButtons}</div>
                 </div>
                 <label class="modal-field">
-                    <span>Descripcion de la solucion *</span>
+                    <span>Descripción de la solución *</span>
                     <textarea name="resolucion" rows="3" required>${data.resolucion}</textarea>
                 </label>
             `;
@@ -1699,7 +1699,7 @@ export class IncidentUI {
         submitButton?.addEventListener('click', () => {
             const resolucionValue = (data.resolucion || '').trim();
             if (!resolucionValue) {
-                alert('Describe la solucion aplicada.');
+                alert('Describe la solución aplicada.');
                 resolucionField?.focus();
                 return;
             }
@@ -1748,7 +1748,7 @@ export class IncidentUI {
     editIncident(id) {
         const incident = this.system.getIncident(id);
         if (!incident) {
-            alert('No se encontro la incidencia seleccionada.');
+            alert('No se encontró la incidencia seleccionada.');
             return;
         }
         if (incident.status === 'closed') {
@@ -1787,7 +1787,7 @@ export class IncidentUI {
                         </select>
                     </label>
                     <label class="modal-field">
-                        <span>Descripcion del problema *</span>
+                        <span>Descripción del problema *</span>
                         <textarea name="descripcion" rows="4" required>${incident.descripcion || ''}</textarea>
                     </label>
                 </form>
@@ -1882,7 +1882,7 @@ export class IncidentUI {
     }
 
     deleteIncident(id) {
-        if (!confirm('Eliminar la incidencia seleccionada?')) {
+        if (!confirm('¿Eliminar la incidencia seleccionada?')) {
             return;
         }
         this.system.removeIncident(id);
