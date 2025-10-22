@@ -1925,7 +1925,7 @@ export class IncidentUI {
         this.pendingReturnView = null;
         const cameFrom = this.view;
         this.view = 'list';
-        if (cameFrom && cameFrom !== 'wizard') {
+        if (cameFrom && cameFrom !== 'wizard' && cameFrom !== 'list') {
             this.previousView = cameFrom;
         }
         const content = this.renderIncidentsList();

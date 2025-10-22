@@ -1032,11 +1032,205 @@ body {
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
 }
 
+.step-select {
+    background: var(--primary-color);
+    color: var(--text-light);
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+}
+
+.step-select:hover,
+.step-select:focus {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+    background: var(--secondary-color);
+}
+
+.step-select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
 .step-actions {
     display: flex;
     gap: 12px;
     justify-content: flex-end;
     flex-wrap: wrap;
+}
+
+.step-title {
+    font-size: 1.15em;
+    color: var(--primary-color);
+    font-weight: 700;
+    margin-bottom: 18px;
+}
+
+.step-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.step-chip,
+.inventory-chip {
+    border: none;
+    border-radius: 10px;
+    padding: 12px 18px;
+    background: #eef1ff;
+    color: var(--primary-color);
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+    text-align: left;
+    min-width: 160px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.step-chip:hover,
+.inventory-chip:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+    background: var(--primary-color);
+    color: var(--text-light);
+}
+
+.step-chip:focus-visible,
+.inventory-chip:focus-visible {
+    outline: 3px solid rgba(102, 126, 234, 0.35);
+    outline-offset: 2px;
+}
+
+.step-chip.active,
+.inventory-chip.active {
+    background: var(--primary-color);
+    color: var(--text-light);
+    box-shadow: var(--shadow-md);
+}
+
+.step-chip:disabled,
+.inventory-chip:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.inventory-layout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+    align-items: flex-start;
+    margin-bottom: 20px;
+}
+
+.inventory-column h4 {
+    font-size: 1em;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-bottom: 12px;
+}
+
+.inventory-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.inventory-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.inventory-chip.parent {
+    background: #f1f3f5;
+    justify-content: space-between;
+}
+
+.inventory-chip.child {
+    background: #f8f9fd;
+    font-size: 0.95em;
+    justify-content: space-between;
+}
+
+.inventory-chip.child:hover {
+    background: var(--secondary-color);
+}
+
+.inventory-children {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-left: 18px;
+}
+
+.inventory-hint {
+    padding: 12px;
+    border-radius: 8px;
+    background: #f8f9fa;
+    color: #495057;
+    font-size: 0.95em;
+}
+
+.inventory-summary {
+    margin-top: 20px;
+    padding: 16px;
+    border-radius: 10px;
+    background: #f1f3f5;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.summary-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(102, 126, 234, 0.12);
+    color: var(--primary-color);
+    font-weight: 600;
+    font-size: 0.85em;
+}
+
+.summary-pill.muted {
+    background: #e9ecef;
+    color: #495057;
+    font-weight: 500;
+}
+
+.summary-pill.highlight {
+    background: rgba(46, 204, 113, 0.18);
+    color: #2f9e44;
+}
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.08);
+    font-size: 0.75em;
+    font-weight: 600;
+    color: rgba(0, 0, 0, 0.6);
+}
+
+.tag.tag-end {
+    background: rgba(255, 107, 107, 0.15);
+    color: #d9480f;
 }
 
 .summary-block {
@@ -1274,6 +1468,19 @@ body {
     .incident-actions-cell {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .inventory-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .inventory-summary {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .step-grid {
+        flex-direction: column;
     }
 
     .open-incidents li {
