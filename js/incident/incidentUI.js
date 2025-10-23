@@ -58,6 +58,7 @@ export class IncidentUI {
         };
         this.closeModalState = null;
         this.searchDebounce = null;
+        this.puestoComponentsOpenFor = null;
     }
 
     registerPresenter(presenter) {
@@ -1085,6 +1086,16 @@ export class IncidentUI {
 
         const puestos = this.system.listPuestos(this.formData.domoId);
         const selected = this.formData.puestoId ?? null;
+        const selectedPuesto = selected
+            ? puestos.find(item => Number(item.id) === Number(selected)) || null
+            : null;
+        const showActions =
+            selectedPuesto && Number(this.puestoComponentsOpenFor) === Number(selectedPuesto.id);
+        const componentsSection = puestos.length
+            ? selectedPuesto
+                ? this.renderPuestoComponentsCard(selectedPuesto, showActions)
+                : this.renderPuestoComponentsPlaceholder()
+            : this.renderPuestoComponentsEmpty();
 
         return `
             <div class="step-panel">
@@ -1100,9 +1111,58 @@ export class IncidentUI {
                         )
                         .join('')}
                 </div>
+                ${componentsSection}
                 <div class="step-actions">
                     <button id="stepPrev" class="incident-btn ghost">Anterior</button>
                     <button id="step3Next" class="incident-btn primary" ${selected ? '' : 'disabled'}>Siguiente</button>
+                </div>
+            </div>
+        `;
+    }
+
+    renderPuestoComponentsPlaceholder() {
+        return `
+            <div class="card puesto-component-card puesto-component-card--placeholder">
+                <p class="puesto-component-card__hint">Selecciona un puesto para acceder a sus componentes.</p>
+            </div>
+        `;
+    }
+
+    renderPuestoComponentsEmpty() {
+        return `
+            <div class="card puesto-component-card puesto-component-card--placeholder">
+                <p class="puesto-component-card__hint">No hay puestos registrados para esta sala.</p>
+            </div>
+        `;
+    }
+
+    renderPuestoComponentsCard(puesto, showActions) {
+        const puestoNombre = escapeHtml(puesto?.nombre ?? 'Puesto');
+
+        if (!showActions) {
+            return `
+                <div class="card puesto-component-card" data-puesto-id="${puesto.id}">
+                    <div class="puesto-component-card__header">
+                        <h4>${puestoNombre}</h4>
+                    </div>
+                    <p class="puesto-component-card__hint">Accede a las acciones rápidas del puesto.</p>
+                    <div class="grid">
+                        <button type="button" class="btn" data-step-action="open-componentes">Componentes</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="card puesto-component-card" data-puesto-id="${puesto.id}">
+                <div class="puesto-component-card__header">
+                    <h4>${puestoNombre}</h4>
+                    <button type="button" class="btn ghost" data-step-action="close-componentes">Volver</button>
+                </div>
+                <p class="puesto-component-card__hint">Selecciona la opción que deseas consultar.</p>
+                <div class="grid two-columns">
+                    <button type="button" class="btn" data-step-action="puesto-instrucciones">Instrucciones</button>
+                    <button type="button" class="btn secondary" data-step-action="puesto-incidencia">Incidencia diaria</button>
                 </div>
             </div>
         `;
@@ -2185,6 +2245,7 @@ export class IncidentUI {
                 this.formData.puestoId = null;
                 this.formData.elementoId = null;
                 this.formData.componenteId = null;
+                this.puestoComponentsOpenFor = null;
                 this.toggleActiveChip(chips, chip);
                 if (nextButton) {
                     nextButton.disabled = false;
@@ -2219,10 +2280,8 @@ export class IncidentUI {
                 this.formData.puestoId = id;
                 this.formData.elementoId = null;
                 this.formData.componenteId = null;
-                this.toggleActiveChip(chips, chip);
-                if (nextButton) {
-                    nextButton.disabled = false;
-                }
+                this.puestoComponentsOpenFor = null;
+                this.showCurrentStep();
             });
         });
 
@@ -2239,6 +2298,43 @@ export class IncidentUI {
         if (nextButton) {
             nextButton.disabled = !this.formData.puestoId;
         }
+
+        const openComponentes = document.querySelector('[data-step-action="open-componentes"]');
+        const closeComponentes = document.querySelector('[data-step-action="close-componentes"]');
+        const instruccionesButton = document.querySelector('[data-step-action="puesto-instrucciones"]');
+        const incidenciaButton = document.querySelector('[data-step-action="puesto-incidencia"]');
+
+        openComponentes?.addEventListener('click', () => {
+            if (!this.formData.puestoId) {
+                return;
+            }
+            this.puestoComponentsOpenFor = Number(this.formData.puestoId);
+            this.showCurrentStep();
+        });
+
+        closeComponentes?.addEventListener('click', () => {
+            this.puestoComponentsOpenFor = null;
+            this.showCurrentStep();
+        });
+
+        instruccionesButton?.addEventListener('click', () => this.handlePuestoQuickAction('instrucciones'));
+        incidenciaButton?.addEventListener('click', () => this.handlePuestoQuickAction('incidencia'));
+    }
+
+    handlePuestoQuickAction(action) {
+        const domoId = this.formData.domoId;
+        const puestoId = this.formData.puestoId;
+
+        if (!domoId || !puestoId) {
+            return;
+        }
+
+        const puestos = this.system.listPuestos(domoId) || [];
+        const puesto = puestos.find(item => Number(item.id) === Number(puestoId)) || null;
+        const puestoNombre = puesto ? puesto.nombre : `Puesto ${puestoId}`;
+        const actionLabel = action === 'instrucciones' ? 'Instrucciones' : 'Incidencia diaria';
+
+        console.info(`[IncidentUI] Acción rápida "${actionLabel}" seleccionada para ${puestoNombre}.`);
     }
 
     bindStep4Events() {
@@ -2324,6 +2420,7 @@ export class IncidentUI {
             descripcion: '',
             impacto: ''
         };
+        this.puestoComponentsOpenFor = null;
     }
 }
 
