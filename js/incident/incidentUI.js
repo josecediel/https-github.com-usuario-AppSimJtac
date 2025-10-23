@@ -1091,11 +1091,11 @@ export class IncidentUI {
             : null;
         const showActions =
             selectedPuesto && Number(this.puestoComponentsOpenFor) === Number(selectedPuesto.id);
-        const componentsSection = puestos.length
-            ? selectedPuesto
-                ? this.renderPuestoComponentsCard(selectedPuesto, showActions)
-                : this.renderPuestoComponentsPlaceholder()
-            : this.renderPuestoComponentsEmpty();
+        const componentsSection = this.buildPuestoComponentsSection(
+            puestos,
+            selectedPuesto,
+            showActions
+        );
 
         return `
             <div class="step-panel">
@@ -1111,13 +1111,25 @@ export class IncidentUI {
                         )
                         .join('')}
                 </div>
-                ${componentsSection}
+                <div id="puestoComponentesSection">${componentsSection}</div>
                 <div class="step-actions">
                     <button id="stepPrev" class="incident-btn ghost">Anterior</button>
                     <button id="step3Next" class="incident-btn primary" ${selected ? '' : 'disabled'}>Siguiente</button>
                 </div>
             </div>
         `;
+    }
+
+    buildPuestoComponentsSection(puestos, selectedPuesto, showActions) {
+        if (!Array.isArray(puestos) || !puestos.length) {
+            return this.renderPuestoComponentsEmpty();
+        }
+
+        if (!selectedPuesto) {
+            return this.renderPuestoComponentsPlaceholder();
+        }
+
+        return this.renderPuestoComponentsCard(selectedPuesto, showActions);
     }
 
     renderPuestoComponentsPlaceholder() {
@@ -2272,7 +2284,26 @@ export class IncidentUI {
     bindStep3Events() {
         const prevButton = document.getElementById('stepPrev');
         const nextButton = document.getElementById('step3Next');
-        const chips = document.querySelectorAll('button[data-step-action="select-puesto"]');
+        const chips = Array.from(
+            document.querySelectorAll('button[data-step-action="select-puesto"]')
+        );
+        const componentsContainer = document.getElementById('puestoComponentesSection');
+
+        const updateNextButtonState = () => {
+            if (nextButton) {
+                nextButton.disabled = !this.formData.puestoId;
+            }
+        };
+
+        const highlightSelectedChip = () => {
+            if (!chips.length) {
+                return;
+            }
+            const activeChip = chips.find(
+                chip => Number(chip.dataset.id) === Number(this.formData.puestoId)
+            );
+            this.toggleActiveChip(chips, activeChip || null);
+        };
 
         chips.forEach(chip => {
             chip.addEventListener('click', () => {
@@ -2281,7 +2312,9 @@ export class IncidentUI {
                 this.formData.elementoId = null;
                 this.formData.componenteId = null;
                 this.puestoComponentsOpenFor = null;
-                this.showCurrentStep();
+                this.toggleActiveChip(chips, chip);
+                updateNextButtonState();
+                this.updatePuestoComponentsSection();
             });
         });
 
@@ -2295,30 +2328,32 @@ export class IncidentUI {
             this.showCurrentStep();
         });
 
-        if (nextButton) {
-            nextButton.disabled = !this.formData.puestoId;
-        }
-
-        const openComponentes = document.querySelector('[data-step-action="open-componentes"]');
-        const closeComponentes = document.querySelector('[data-step-action="close-componentes"]');
-        const instruccionesButton = document.querySelector('[data-step-action="puesto-instrucciones"]');
-        const incidenciaButton = document.querySelector('[data-step-action="puesto-incidencia"]');
-
-        openComponentes?.addEventListener('click', () => {
-            if (!this.formData.puestoId) {
+        componentsContainer?.addEventListener('click', event => {
+            const button = event.target.closest('[data-step-action]');
+            if (!button) {
                 return;
             }
-            this.puestoComponentsOpenFor = Number(this.formData.puestoId);
-            this.showCurrentStep();
+
+            const action = button.dataset.stepAction;
+            if (action === 'open-componentes') {
+                if (!this.formData.puestoId) {
+                    return;
+                }
+                this.puestoComponentsOpenFor = Number(this.formData.puestoId);
+                this.updatePuestoComponentsSection();
+            } else if (action === 'close-componentes') {
+                this.puestoComponentsOpenFor = null;
+                this.updatePuestoComponentsSection();
+            } else if (action === 'puesto-instrucciones') {
+                this.handlePuestoQuickAction('instrucciones');
+            } else if (action === 'puesto-incidencia') {
+                this.handlePuestoQuickAction('incidencia');
+            }
         });
 
-        closeComponentes?.addEventListener('click', () => {
-            this.puestoComponentsOpenFor = null;
-            this.showCurrentStep();
-        });
-
-        instruccionesButton?.addEventListener('click', () => this.handlePuestoQuickAction('instrucciones'));
-        incidenciaButton?.addEventListener('click', () => this.handlePuestoQuickAction('incidencia'));
+        updateNextButtonState();
+        highlightSelectedChip();
+        this.updatePuestoComponentsSection();
     }
 
     handlePuestoQuickAction(action) {
@@ -2335,6 +2370,29 @@ export class IncidentUI {
         const actionLabel = action === 'instrucciones' ? 'Instrucciones' : 'Incidencia diaria';
 
         console.info(`[IncidentUI] Acción rápida "${actionLabel}" seleccionada para ${puestoNombre}.`);
+    }
+
+    updatePuestoComponentsSection() {
+        const container = document.getElementById('puestoComponentesSection');
+        if (!container) {
+            return;
+        }
+
+        const domoId = this.formData.domoId;
+        if (!domoId) {
+            container.innerHTML = this.renderPuestoComponentsPlaceholder();
+            return;
+        }
+
+        const puestos = this.system.listPuestos(domoId) || [];
+        const selected = this.formData.puestoId ?? null;
+        const selectedPuesto = selected
+            ? puestos.find(item => Number(item.id) === Number(selected)) || null
+            : null;
+        const showActions =
+            selectedPuesto && Number(this.puestoComponentsOpenFor) === Number(selectedPuesto.id);
+
+        container.innerHTML = this.buildPuestoComponentsSection(puestos, selectedPuesto, showActions);
     }
 
     bindStep4Events() {
