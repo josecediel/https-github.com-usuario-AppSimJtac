@@ -1,59 +1,25 @@
 /**
  * CONTROLADOR PRINCIPAL DE LA APP
  * --------------------------------
- * Este archivo arranca la aplicacion:
- * - Carga la configuracion de menus.
- * - Crea los modulos que dibujan pantallas y guardan incidencias.
- * - Conecta los modulos entre si para que compartan datos.
- *
- * Puedes verlo como el director de orquesta: reune a todos los musicos
- * (modulos) y da la senal para empezar a tocar en cuanto la pagina esta lista.
+ * Este archivo arranca la aplicación cargando la configuración y
+ * preparando el controlador de navegación.
  */
 
 import { appConfig } from './config.js';
 import { AppController } from './app/appController.js';
-import { IncidentSystem } from './incident/incidentSystem.js';
-import { IncidentUI } from './incident/incidentUI.js';
-import { initDB } from '../db.js';
 
 let appController;
-let incidentSystem;
-let incidentUI;
-let databaseReady = false;
 
 bootstrap();
 
-async function bootstrap() {
-    await initDatabase();
+function bootstrap() {
     initModules();
 }
 
-async function initDatabase() {
-    try {
-        await initDB();
-        databaseReady = true;
-        console.info('[DataStore] Almacen de incidencias inicializado');
-    } catch (error) {
-        databaseReady = false;
-        console.error('[DataStore] Error al inicializar el almacen local', error);
-    }
-}
-
 function initModules() {
-    incidentSystem = new IncidentSystem();
-    incidentUI = new IncidentUI(incidentSystem);
-    appController = new AppController(appConfig, incidentUI);
+    appController = new AppController(appConfig);
 
-    incidentSystem.init();
-
-    incidentUI.registerPresenter(optionData => {
-        appController.showContentDirect(optionData);
-    });
-
-    const startApp = () => {
-        appController.init();
-        notifyDatabaseStatus();
-    };
+    const startApp = () => appController.init();
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', startApp, { once: true });
@@ -61,8 +27,6 @@ function initModules() {
         startApp();
     }
 
-    // Exponer utilidades para depuracion y manejadores inline del sistema de incidencias
-    window.IncidentUI = incidentUI;
     window.AppDebug = {
         getState: () => ({
             currentButton: appController.state.currentButton,
@@ -71,10 +35,4 @@ function initModules() {
         }),
         getConfig: () => appConfig
     };
-}
-
-function notifyDatabaseStatus() {
-    if (!databaseReady) {
-        console.warn('[DataStore] No se pudo preparar el almacen local. Los datos solo estaran disponibles durante la sesion.');
-    }
 }

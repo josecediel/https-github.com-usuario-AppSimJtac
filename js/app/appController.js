@@ -6,7 +6,6 @@
  * - Crea los botones principales y sus submenús.
  * - Abre el contenido adecuado cuando haces clic.
  * - Lleva un historial para poder volver atrás sin perderte.
- * También integra el módulo de incidencias para que aparezca dentro del mismo flujo.
  */
 
 import { AppState } from './state.js';
@@ -14,9 +13,8 @@ import { getDomElements } from './domElements.js';
 import { ContentRenderer } from './contentRenderer.js';
 
 export class AppController {
-    constructor(config, incidentUI, customRenderers = {}) {
+    constructor(config, customRenderers = {}) {
         this.config = config;
-        this.incidentUI = incidentUI;
         this.state = new AppState();
         this.elements = getDomElements();
         this.contentRenderer = new ContentRenderer(this.elements, this.state, customRenderers);
@@ -117,15 +115,6 @@ export class AppController {
 
     handleSubmenuClick(buttonId, optionId, optionData, optionPath = [], options = {}) {
         const { skipHashUpdate = false } = options;
-
-        if (optionData.type === 'incident') {
-            this.state.openContent(buttonId, optionId);
-            this.incidentUI.showHome();
-            if (!skipHashUpdate) {
-                this.setHashForPath(buttonId, optionPath);
-            }
-            return;
-        }
 
         if (optionData.type === 'submenu' && optionData.submenu) {
             this.state.enterSubmenu(buttonId, optionId);
@@ -263,11 +252,6 @@ export class AppController {
 
         if (!optionConfig) {
             this.reset({ skipHashUpdate: true });
-            return;
-        }
-
-        if (optionConfig.type === 'incident') {
-            this.incidentUI.showIncidentsList();
             return;
         }
 
@@ -490,13 +474,8 @@ export class AppController {
                 continue;
             }
 
-            if (optionData.type === 'incident') {
-                this.state.openContent(buttonId, optionId);
-                this.incidentUI.showHome();
-            } else {
-                this.state.openContent(buttonId, optionId);
-                this.showContentDirect(optionData);
-            }
+            this.state.openContent(buttonId, optionId);
+            this.showContentDirect(optionData);
 
             entries = optionData.submenu;
             break;

@@ -304,54 +304,188 @@ export const appConfig = {
                 type: "submenu",
                 submenu: {
                     suboption1: {
-                        title: "Visual 3D",
-                        type: "text",
-                        content: `
+                        title: "Visual VBS",
+                        type: "submenu",
+                        submenu: {
+                            option1: {
+                                title: "Incidencia",
+                                type: "text",
+                                content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                            },
+                            option2: {
+                                title: "Configuración",
+                                type: "text",
+                                editable: true,
+                                content: `
                     <h3>Aplicaciones</h3>
                     <p>VBS</p>
                 `
+                            }
+                        }
                     },
                     suboption2: {
-                        title: "Visual",
-                        type: "text",
-                        content: `
-                    <h3>Aplicaciones</h3>
-                    <p>VBS</p>
+                        title: "Visual IOS",
+                        type: "submenu",
+                        submenu: {
+                            option1: {
+                                title: "Incidencia",
+                                type: "text",
+                                content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
                 `
+                            },
+                            option2: {
+                                title: "Configuración",
+                                type: "text",
+                                editable: true,
+                                content: `
+                    <h3>Aplicaciones</h3>
+                    <p>IOS</p>
+                `
+                            }
+                        }
                     },
                     suboption3: {
-                        title: "Designador láser",
-                        type: "text",
-                        content: `
-                    <h3>Aplicaciones</h3>
-                    <p>VBS</p>
+                        title: "LTD",
+                        type: "submenu",
+                        submenu: {
+                            option1: {
+                                title: "Incidencia",
+                                type: "text",
+                                content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
                 `
+                            },
+                            option2: {
+                                title: "Configuración",
+                                type: "text",
+                                editable: true,
+                                content: `
+                    <h3>Aplicaciones</h3>
+                    <p>Laser Target Designator</p>
+                `
+                            }
+                        }
                     },
                     suboption4: {
-                        title: "Moskito",
-                        type: "text",
-                        content: `
-                    <h3>Aplicaciones</h3>
-                    <p>VBS</p>
+                        title: "Jim Compact",
+                        type: "submenu",
+                        submenu: {
+                            option1: {
+                                title: "Incidencia",
+                                type: "text",
+                                content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
                 `
+                            },
+                            option2: {
+                                title: "Configuración",
+                                type: "text",
+                                editable: true,
+                                content: `
+                    <h3>Aplicaciones</h3>
+                    <p>JIM Compact</p>
+                `
+                            }
+                        }
                     },
                     suboption5: {
-                        title: "Jimp compact",
-                        type: "text",
-                        content: `
-                    <h3>Aplicaciones</h3>
-                    <p>Lin Phone</p>
+                        title: "Moskito",
+                        type: "submenu",
+                        submenu: {
+                            option1: {
+                                title: "Incidencia",
+                                type: "text",
+                                content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
                 `
+                            },
+                            option2: {
+                                title: "Configuración",
+                                type: "text",
+                                editable: true,
+                                content: `
+                    <h3>Aplicaciones</h3>
+                    <p>Moskito</p>
+                `
+                            }
+                        }
                     },
                     suboption6: {
-                        title: "Sincronismo de proyección",
-                        type: "text",
-                        content: `
-                    <h3>Aplicaciones</h3>
-                    <h4>Puntero láser</h4>
-                    <h4>DAGR</h4>
-                    <p>VBS</p>
+                        title: "Radio Mando Bluetooth",
+                        type: "submenu",
+                        submenu: {
+                            option1: {
+                                title: "Incidencia",
+                                type: "text",
+                                content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
                 `
+                            },
+                            option2: {
+                                title: "Configuración",
+                                type: "text",
+                                editable: true,
+                                content: `
+                    <h3>Aplicaciones</h3>
+                    <p>Mando remoto Bluetooth</p>
+                `
+                            }
+                        }
+                    },
+                    suboption7: {
+                        title: "Dagr",
+                        type: "submenu",
+                        submenu: {
+                            option1: {
+                                title: "Incidencia",
+                                type: "text",
+                                content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                            },
+                            option2: {
+                                title: "Configuración",
+                                type: "text",
+                                editable: true,
+                                content: `
+                    <h3>Aplicaciones</h3>
+                    <p>DAGR</p>
+                `
+                            }
+                        }
+                    },
+                    suboption8: {
+                        title: "Puntero láser",
+                        type: "submenu",
+                        submenu: {
+                            option1: {
+                                title: "Incidencia",
+                                type: "text",
+                                content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                            },
+                            option2: {
+                                title: "Configuración",
+                                type: "text",
+                                editable: true,
+                                content: `
+                    <h3>Aplicaciones</h3>
+                    <p>Puntero láser</p>
+                `
+                            }
+                        }
                     }
                 }
             },
@@ -434,9 +568,194 @@ export const appConfig = {
                 `
                     },
                     suboption3: {
-                        title: "Descripción técnica",
-                        type: "text",
-                        content: `<h3>Descripción técnica</h3><p>Información detallada sobre el sistema de proyección.</p>`
+                        title: "Componentes",
+                        type: "submenu",
+                        submenu: {
+                            canal1: {
+                                title: "Canal 1",
+                                type: "submenu",
+                                submenu: {
+                                    option1: {
+                                        title: "Incidencia",
+                                        type: "text",
+                                        content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                                    },
+                                    option2: {
+                                        title: "Configuración",
+                                        type: "text",
+                                        editable: true,
+                                        content: `
+                    <h3>Configuración del canal</h3>
+                    <p>Canal 1</p>
+                `
+                                    }
+                                }
+                            },
+                            canal2: {
+                                title: "Canal 2",
+                                type: "submenu",
+                                submenu: {
+                                    option1: {
+                                        title: "Incidencia",
+                                        type: "text",
+                                        content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                                    },
+                                    option2: {
+                                        title: "Configuración",
+                                        type: "text",
+                                        editable: true,
+                                        content: `
+                    <h3>Configuración del canal</h3>
+                    <p>Canal 2</p>
+                `
+                                    }
+                                }
+                            },
+                            canal3: {
+                                title: "Canal 3",
+                                type: "submenu",
+                                submenu: {
+                                    option1: {
+                                        title: "Incidencia",
+                                        type: "text",
+                                        content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                                    },
+                                    option2: {
+                                        title: "Configuración",
+                                        type: "text",
+                                        editable: true,
+                                        content: `
+                    <h3>Configuración del canal</h3>
+                    <p>Canal 3</p>
+                `
+                                    }
+                                }
+                            },
+                            canal4: {
+                                title: "Canal 4",
+                                type: "submenu",
+                                submenu: {
+                                    option1: {
+                                        title: "Incidencia",
+                                        type: "text",
+                                        content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                                    },
+                                    option2: {
+                                        title: "Configuración",
+                                        type: "text",
+                                        editable: true,
+                                        content: `
+                    <h3>Configuración del canal</h3>
+                    <p>Canal 4</p>
+                `
+                                    }
+                                }
+                            },
+                            canal5: {
+                                title: "Canal 5",
+                                type: "submenu",
+                                submenu: {
+                                    option1: {
+                                        title: "Incidencia",
+                                        type: "text",
+                                        content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                                    },
+                                    option2: {
+                                        title: "Configuración",
+                                        type: "text",
+                                        editable: true,
+                                        content: `
+                    <h3>Configuración del canal</h3>
+                    <p>Canal 5</p>
+                `
+                                    }
+                                }
+                            },
+                            canal6: {
+                                title: "Canal 6",
+                                type: "submenu",
+                                submenu: {
+                                    option1: {
+                                        title: "Incidencia",
+                                        type: "text",
+                                        content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                                    },
+                                    option2: {
+                                        title: "Configuración",
+                                        type: "text",
+                                        editable: true,
+                                        content: `
+                    <h3>Configuración del canal</h3>
+                    <p>Canal 6</p>
+                `
+                                    }
+                                }
+                            },
+                            canal7: {
+                                title: "Canal 7",
+                                type: "submenu",
+                                submenu: {
+                                    option1: {
+                                        title: "Incidencia",
+                                        type: "text",
+                                        content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                                    },
+                                    option2: {
+                                        title: "Configuración",
+                                        type: "text",
+                                        editable: true,
+                                        content: `
+                    <h3>Configuración del canal</h3>
+                    <p>Canal 7</p>
+                `
+                                    }
+                                }
+                            },
+                            canal8: {
+                                title: "Canal 8",
+                                type: "submenu",
+                                submenu: {
+                                    option1: {
+                                        title: "Incidencia",
+                                        type: "text",
+                                        content: `
+                    <h3>Incidencias</h3>
+                    <p>Pendiente de documentar.</p>
+                `
+                                    },
+                                    option2: {
+                                        title: "Configuración",
+                                        type: "text",
+                                        editable: true,
+                                        content: `
+                    <h3>Configuración del canal</h3>
+                    <p>Canal 8</p>
+                `
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
